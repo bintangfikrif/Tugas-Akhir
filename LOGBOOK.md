@@ -8,3 +8,6 @@
 
 ## July
 
+### 2025-07-02
+- Conduct further literature studies
+- Create a simple workflow for research work
