@@ -11,3 +11,9 @@
 ### 2025-07-02
 - Conduct further literature studies
 - Create a simple workflow for research work
+
+## August
+
+### 2025-08-01
+- Conduct further literature studies
+- Search Dataset
