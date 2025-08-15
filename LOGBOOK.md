@@ -17,3 +17,8 @@
 ### 2025-08-01
 - Conduct further literature studies
 - Search Dataset
+
+### 2025-08-15
+- Conduct further literature studies
+- Explore EDF Dataset
+
