@@ -22,3 +22,5 @@
 - Conduct further literature studies
 - Explore EDF Dataset
 
+### 2025-08-29
+- Assign Data Reader to read EDF files
