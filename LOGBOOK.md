@@ -24,3 +24,9 @@
 
 ### 2025-08-29
 - Assign Data Reader to read EDF files
+
+## September
+
+### 2025-09-16
+- Fix Data Reader to read EDF files
+- Create a function to split the data into train and val
