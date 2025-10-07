@@ -35,4 +35,4 @@
 
 ### 2025-10-7
 - Add New References
-- 
+- Add: K-Fold Split, Random Start Offset, and 5s Split Window.

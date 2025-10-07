@@ -6,8 +6,9 @@ import random
 import pandas as pd
 import mne
 import matplotlib.pyplot as plt
+from sklearn.model_selection import KFold
 
-# Set random seed for reproducibility
+# reproducibility
 RANDOM_SEED = 2004
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
@@ -18,15 +19,18 @@ class EEGDataset(Dataset):
 
     def __init__(self,
                  data_dir='psg',
-                 transform=None,
+                 fold=0,
                  split='train',
-                 sample_len=1000  # jumlah sample per channel (window)
-                 ):
+                 n_splits=5,
+                 window_sec=5,   # durasi window (detik)
+                 transform=None,
+                 random_offset=True):
 
         self.data_dir = data_dir
         self.transform = transform
         self.split = split
-        self.sample_len = sample_len
+        self.window_sec = window_sec
+        self.random_offset = random_offset
 
         # list file EDF
         self.edf_files = [f for f in os.listdir(data_dir) if f.endswith('.edf')]
@@ -38,81 +42,85 @@ class EEGDataset(Dataset):
         self.label_dict = dict(zip(df['filename'], df['label']))
         self.labels = [self.label_dict.get(f, None) for f in self.edf_files]
 
-        # pasangkan EDF file dengan label
         all_data = list(zip(self.edf_files, self.labels))
 
-        # split train/val
-        total_len = len(all_data)
-        train_len = int(0.8 * total_len)
-        indices = list(range(total_len))
-        random.shuffle(indices)
+        # 5-fold split
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
+        folds = list(kf.split(all_data))
 
-        train_indices = indices[:train_len]
-        val_indices = indices[train_len:]
-
+        train_idx, val_idx = folds[fold]
         if split == 'train':
-            self.data = [all_data[i] for i in train_indices]
+            self.data = [all_data[i] for i in train_idx]
         elif split == 'val':
-            self.data = [all_data[i] for i in val_indices]
+            self.data = [all_data[i] for i in val_idx]
         else:
             raise ValueError("Split must be 'train' or 'val'")
 
+        # precompute info setiap EDF (jumlah window)
+        self.sample_rate = 512  # diketahui dari kamu
+        self.sample_len = self.window_sec * self.sample_rate  # 5 detik = 2560 sample
+        self.windows = []  # daftar (edf_path, label, start_idx)
+
+        for fname, label in self.data:
+            edf_path = os.path.join(self.data_dir, fname)
+            raw = mne.io.read_raw_edf(edf_path, preload=False, verbose=False)
+            picks = mne.pick_channels(raw.ch_names, include=self.TARGET_CHANNELS)
+            n_samples = raw.n_times
+
+            # random offset (misal 0–512 sample)
+            offset = random.randint(0, self.sample_rate) if self.random_offset else 0
+
+            # buat daftar window start index
+            for start in range(offset, n_samples - self.sample_len, self.sample_len):
+                self.windows.append((edf_path, label, start))
+
+        random.shuffle(self.windows)  # acak semua window biar tidak berurutan per file
+
     def __len__(self):
-        return len(self.data)
+        return len(self.windows)
 
     def __getitem__(self, idx):
-        edf_path = os.path.join(self.data_dir, self.data[idx][0])
-        label = self.data[idx][1]
+        edf_path, label, start = self.windows[idx]
 
         # load EDF
         raw = mne.io.read_raw_edf(edf_path, preload=True, verbose=False)
         picks = mne.pick_channels(raw.ch_names, include=self.TARGET_CHANNELS)
-
-        data, _ = raw[picks, :]
+        data, _ = raw[picks, start:start + self.sample_len]
         ch_names = [raw.ch_names[i] for i in picks]
 
-        # pad/truncate tiap channel agar panjangnya sama = sample_len
-        signals = []
-        for i in range(len(ch_names)):
-            sig = data[i]
-            if len(sig) >= self.sample_len:
-                sig = sig[:self.sample_len]
-            else:
-                pad_len = self.sample_len - len(sig)
-                sig = np.pad(sig, (0, pad_len), mode='constant')
-            signals.append(sig)
-
-        signals = np.stack(signals)  # shape: (n_channels, sample_len)
+        # konversi ke tensor
+        signals = np.stack(data)
         signals_tensor = torch.tensor(signals, dtype=torch.float32)
 
         if self.transform:
             signals_tensor = self.transform(signals_tensor)
 
-        return_data = (signals_tensor, label, edf_path, ch_names)
-        return return_data
+        return signals_tensor, label, edf_path, ch_names, start
 
 
 if __name__ == "__main__":
-    train_dataset = EEGDataset(split='train')
-    val_dataset = EEGDataset(split='val')
+    fold = 0  # fold ke-1
+    train_dataset = EEGDataset(split='train', fold=fold)
+    val_dataset = EEGDataset(split='val', fold=fold)
 
-    print(f"Train data: {len(train_dataset)}")
-    print(f"Val data: {len(val_dataset)}")
-    print(f"Total: {len(train_dataset) + len(val_dataset)}")
+    print(f"Fold {fold+1}")
+    print(f"Train windows: {len(train_dataset)}")
+    print(f"Val windows: {len(val_dataset)}")
 
     # ambil 1 contoh dan plot
-    idx = 0
-    signals, label, filepath, ch_names = train_dataset[idx]
+    idx = random.randint(0, len(train_dataset) - 1)
+    signals, label, filepath, ch_names, start = train_dataset[idx]
 
-    print(f"\nContoh data index {idx}")
-    print(f"Signals shape: {signals.shape}")  # (7, sample_len)
-    print(f"Label (Tingkat kantuk): {label}")
+    print(f"\nContoh window index {idx}")
+    print(f"Signals shape: {signals.shape}")  # (7, 2560)
+    print(f"Label: {label}")
     print(f"File path: {filepath}")
+    print(f"Start index: {start}")
 
-    # Plot setiap channel
+    # Plot sinyal
     n_channels = signals.shape[0]
     fig, axes = plt.subplots(n_channels, 1, figsize=(12, 10), sharex=True)
-    fig.suptitle(f"Signals from {os.path.basename(filepath)} | Label (Tingkat Kantuk): {label}", fontsize=14)
+    fig.suptitle(f"Signals from {os.path.basename(filepath)} | Label: {label} | Start: {start}", fontsize=14)
 
     for i in range(n_channels):
         axes[i].plot(signals[i].numpy())
