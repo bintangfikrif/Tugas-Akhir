@@ -22,7 +22,7 @@ class EEGDataset(Dataset):
                  fold=0,
                  split='train',
                  n_splits=5,
-                 window_sec=5,   # durasi window (detik)
+                 window_sec=5, 
                  transform=None,
                  random_offset=True):
 
@@ -57,9 +57,9 @@ class EEGDataset(Dataset):
             raise ValueError("Split must be 'train' or 'val'")
 
         # precompute info setiap EDF (jumlah window)
-        self.sample_rate = 512  # diketahui dari kamu
-        self.sample_len = self.window_sec * self.sample_rate  # 5 detik = 2560 sample
-        self.windows = []  # daftar (edf_path, label, start_idx)
+        self.sample_rate = 512  
+        self.sample_len = self.window_sec * self.sample_rate 
+        self.windows = []
 
         for fname, label in self.data:
             edf_path = os.path.join(self.data_dir, fname)
@@ -67,14 +67,14 @@ class EEGDataset(Dataset):
             picks = mne.pick_channels(raw.ch_names, include=self.TARGET_CHANNELS)
             n_samples = raw.n_times
 
-            # random offset (misal 0–512 sample)
+            # random offset
             offset = random.randint(0, self.sample_rate) if self.random_offset else 0
 
             # buat daftar window start index
             for start in range(offset, n_samples - self.sample_len, self.sample_len):
                 self.windows.append((edf_path, label, start))
 
-        random.shuffle(self.windows)  # acak semua window biar tidak berurutan per file
+        random.shuffle(self.windows)
 
     def __len__(self):
         return len(self.windows)
