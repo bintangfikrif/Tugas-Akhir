@@ -37,9 +37,49 @@ class EEGDataset(Dataset):
         self.edf_files.sort()
 
         # baca CSV label
+        # csv_path logic: try relative to provided data_dir, otherwise try repo-level 'label/labels.csv'
         csv_path = os.path.join(os.path.dirname(data_dir), 'label', 'labels.csv')
+        if not os.path.exists(csv_path):
+            # fallback: label folder expected as sibling of this script's parent
+            repo_root = os.path.dirname(os.path.dirname(__file__))
+            alt = os.path.join(repo_root, 'label', 'labels.csv')
+            if os.path.exists(alt):
+                csv_path = alt
+
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"labels.csv not found at {csv_path}")
+
         df = pd.read_csv(csv_path)
-        self.label_dict = dict(zip(df['filename'], df['label']))
+
+        # create mapping from possibly non-zero-based labels to 0..C-1
+        unique_labels = list(pd.Series(df['label']).unique())
+        # keep deterministic ordering
+        try:
+            unique_sorted = sorted(unique_labels)
+        except Exception:
+            unique_sorted = unique_labels
+
+        self.label_map = {v: i for i, v in enumerate(unique_sorted)}
+
+        # build filename -> int_label map
+        mapped = []
+        for _, row in df.iterrows():
+            fname = row['filename']
+            lab = row['label']
+            if lab in self.label_map:
+                mapped.append((fname, self.label_map[lab]))
+            else:
+                # unexpected label: map via casting to int then adjust to 0-based if needed
+                try:
+                    lab_int = int(lab)
+                    # if labels are 1..C, convert to 0..C-1
+                    if lab_int > 0 and lab_int - 1 not in self.label_map.values():
+                        lab_int = lab_int - 1
+                    mapped.append((fname, lab_int))
+                except Exception:
+                    mapped.append((fname, None))
+
+        self.label_dict = dict(mapped)
         self.labels = [self.label_dict.get(f, None) for f in self.edf_files]
 
         all_data = list(zip(self.edf_files, self.labels))
