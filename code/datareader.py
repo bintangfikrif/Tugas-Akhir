@@ -50,34 +50,29 @@ class EEGDataset(Dataset):
             raise FileNotFoundError(f"labels.csv not found at {csv_path}")
 
         df = pd.read_csv(csv_path)
-
-        # create mapping from possibly non-zero-based labels to 0..C-1
-        unique_labels = list(pd.Series(df['label']).unique())
-        # keep deterministic ordering
-        try:
-            unique_sorted = sorted(unique_labels)
-        except Exception:
-            unique_sorted = unique_labels
-
-        self.label_map = {v: i for i, v in enumerate(unique_sorted)}
-
-        # build filename -> int_label map
+        self.label_map = {0: 0, 1: 1}
         mapped = []
         for _, row in df.iterrows():
             fname = row['filename']
-            lab = row['label']
-            if lab in self.label_map:
-                mapped.append((fname, self.label_map[lab]))
-            else:
-                # unexpected label: map via casting to int then adjust to 0-based if needed
-                try:
-                    lab_int = int(lab)
-                    # if labels are 1..C, convert to 0..C-1
-                    if lab_int > 0 and lab_int - 1 not in self.label_map.values():
-                        lab_int = lab_int - 1
-                    mapped.append((fname, lab_int))
-                except Exception:
-                    mapped.append((fname, None))
+            lab = row['label'] 
+            
+            try:
+                kss_level = int(lab)
+                binary_label = None
+                
+                # Tentukan Threshold
+                # KSS 1-5 = 0 (Tidak Mengantuk)
+                # KSS 6-9 = 1 (Mengantuk)
+                if 1 <= kss_level <= 5:
+                    binary_label = 0
+                elif 6 <= kss_level <= 9:
+                    binary_label = 1
+                
+                if binary_label is not None:
+                    mapped.append((fname, binary_label))
+                    
+            except Exception:
+                mapped.append((fname, None))
 
         self.label_dict = dict(mapped)
         self.labels = [self.label_dict.get(f, None) for f in self.edf_files]
@@ -96,16 +91,25 @@ class EEGDataset(Dataset):
         else:
             raise ValueError("Split must be 'train' or 'val'")
 
-        # precompute info setiap EDF (jumlah window)
         self.sample_rate = 512  
         self.sample_len = self.window_sec * self.sample_rate 
         self.windows = []
 
         for fname, label in self.data:
+            if label is None:
+                continue
+                
             edf_path = os.path.join(self.data_dir, fname)
-            raw = mne.io.read_raw_edf(edf_path, preload=False, verbose=False)
-            picks = mne.pick_channels(raw.ch_names, include=self.TARGET_CHANNELS)
-            n_samples = raw.n_times
+            try:
+                raw = mne.io.read_raw_edf(edf_path, preload=False, verbose=False)
+                if not all(ch in raw.ch_names for ch in self.TARGET_CHANNELS):
+                    print(f"Peringatan: Melewatkan {fname} karena kekurangan channel.")
+                    continue
+                    
+                n_samples = raw.n_times
+            except Exception as e:
+                print(f"Error membaca {fname}: {e}. Melewatkan file.")
+                continue
 
             # random offset
             offset = random.randint(0, self.sample_rate) if self.random_offset else 0
@@ -124,49 +128,69 @@ class EEGDataset(Dataset):
 
         # load EDF
         raw = mne.io.read_raw_edf(edf_path, preload=True, verbose=False)
-        picks = mne.pick_channels(raw.ch_names, include=self.TARGET_CHANNELS)
+        picks = mne.pick_channels(raw.ch_names, include=self.TARGET_CHANNELS, ordered=True)
         data, _ = raw[picks, start:start + self.sample_len]
+        
         ch_names = [raw.ch_names[i] for i in picks]
+        reordered_data = []
+        for target_ch in self.TARGET_CHANNELS:
+            try:
+                idx_in_raw = ch_names.index(target_ch)
+                reordered_data.append(data[idx_in_raw])
+            except ValueError:
+                raise RuntimeError(f"Channel {target_ch} tidak ditemukan di {edf_path} saat __getitem__")
 
-        # konversi ke tensor
-        signals = np.stack(data)
+        signals = np.stack(reordered_data)
         signals_tensor = torch.tensor(signals, dtype=torch.float32)
 
         if self.transform:
             signals_tensor = self.transform(signals_tensor)
 
-        return signals_tensor, label, edf_path, ch_names, start
+        return signals_tensor, label, edf_path, self.TARGET_CHANNELS, start
 
 
 if __name__ == "__main__":
-    fold = 0  # fold ke-1
-    train_dataset = EEGDataset(split='train', fold=fold)
-    val_dataset = EEGDataset(split='val', fold=fold)
+    data_dir_path = 'psg' 
+    
+    if not os.path.exists(data_dir_path):
+        print(f"Direktori data '{data_dir_path}' tidak ditemukan.")
+        print("Pastikan Anda menjalankan skrip ini dari direktori yang benar,")
+        print("atau ubah variabel 'data_dir_path' di dalam `if __name__ == '__main__':`")
+    else:
+        fold = 0  
+        train_dataset = EEGDataset(data_dir=data_dir_path, split='train', fold=fold)
+        val_dataset = EEGDataset(data_dir=data_dir_path, split='val', fold=fold)
 
-    print(f"Fold {fold+1}")
-    print(f"Train windows: {len(train_dataset)}")
-    print(f"Val windows: {len(val_dataset)}")
+        print(f"Fold {fold+1}")
+        print(f"Train windows: {len(train_dataset)}")
+        print(f"Val windows: {len(val_dataset)}")
+        print(f"Label map: {train_dataset.label_map}") # Harusnya {0: 0, 1: 1}
 
-    # ambil 1 contoh dan plot
-    idx = random.randint(0, len(train_dataset) - 1)
-    signals, label, filepath, ch_names, start = train_dataset[idx]
+        # ambil 1 contoh dan plot
+        if len(train_dataset) > 0:
+            idx = random.randint(0, len(train_dataset) - 1)
+            signals, label, filepath, ch_names, start = train_dataset[idx]
 
-    print(f"\nContoh window index {idx}")
-    print(f"Signals shape: {signals.shape}")  # (7, 2560)
-    print(f"Label: {label}")
-    print(f"File path: {filepath}")
-    print(f"Start index: {start}")
+            print(f"\nContoh window index {idx}")
+            print(f"Signals shape: {signals.shape}")  # (7, 2560)
+            print(f"Label: {label}") # Harusnya 0 atau 1
+            print(f"File path: {filepath}")
+            print(f"Start index: {start}")
+            print(f"Channel names: {ch_names}")
 
-    # Plot sinyal
-    n_channels = signals.shape[0]
-    fig, axes = plt.subplots(n_channels, 1, figsize=(12, 10), sharex=True)
-    fig.suptitle(f"Signals from {os.path.basename(filepath)} | Label: {label} | Start: {start}", fontsize=14)
+            # Plot sinyal
+            n_channels = signals.shape[0]
+            fig, axes = plt.subplots(n_channels, 1, figsize=(12, 10), sharex=True)
+            title = f"Label: {'Mengantuk' if label == 1 else 'Tidak Mengantuk'} (KSS {'>=6' if label == 1 else '<=5'})"
+            fig.suptitle(f"Signals from {os.path.basename(filepath)} | {title} | Start: {start}", fontsize=14)
 
-    for i in range(n_channels):
-        axes[i].plot(signals[i].numpy())
-        axes[i].set_ylabel(ch_names[i], rotation=0, labelpad=30)
-        axes[i].grid(True)
+            for i in range(n_channels):
+                axes[i].plot(signals[i].numpy())
+                axes[i].set_ylabel(ch_names[i], rotation=0, labelpad=30)
+                axes[i].grid(True)
 
-    axes[-1].set_xlabel("Sample Points")
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plt.show()
+            axes[-1].set_xlabel("Sample Points")
+            plt.tight_layout(rect=[0, 0, 1, 0.96])
+            plt.show()
+        else:
+            print("\nTidak ada data training untuk di-plot. Cek folder data dan file CSV.")

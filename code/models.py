@@ -42,7 +42,7 @@ class ResNet1D(nn.Module):
     Example input from `EEGDataset` in this repo: 7 channels x 2560 samples.
 
     Usage:
-        model = resnet34_1d(in_channels=7, num_classes=2)
+        model = resnet18_1d(in_channels=7, num_classes=2) # Diubah ke resnet18
         x = torch.randn(4, 7, 2560)
         logits = model(x)
     """
@@ -65,6 +65,7 @@ class ResNet1D(nn.Module):
 
         # global pooling + fc
         self.avgpool = nn.AdaptiveAvgPool1d(1)
+        self.dropout = nn.Dropout(p=0.5) # Nilai p=0.5 adalah awal yang baik
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         # init weights
@@ -111,19 +112,31 @@ class ResNet1D(nn.Module):
 
         x = self.avgpool(x)  # (batch, channels, 1)
         x = torch.flatten(x, 1)
+        x = self.dropout(x) 
+        
         x = self.fc(x)
 
         return x
-
 
 def resnet34_1d(in_channels=7, num_classes=2):
     """Constructs a ResNet-34 model for 1D signals."""
     return ResNet1D(BasicBlock1D, [3, 4, 6, 3], in_channels=in_channels, num_classes=num_classes)
 
+def resnet18_1d(in_channels=7, num_classes=2):
+    """Constructs a ResNet-18 model for 1D signals."""
+    return ResNet1D(BasicBlock1D, [2, 2, 2, 2], in_channels=in_channels, num_classes=num_classes)
+
 
 if __name__ == '__main__':
     # quick self-test to verify shapes
-    model = resnet34_1d(in_channels=7, num_classes=2)
+    
+    print("--- Tes ResNet-34 ---")
+    model34 = resnet34_1d(in_channels=7, num_classes=2)
     x = torch.randn(2, 7, 2560)
-    y = model(x)
-    print('Input', x.shape, 'Output', y.shape)
+    y34 = model34(x)
+    print('Input', x.shape, 'Output ResNet-34', y34.shape)
+    
+    print("\n--- Tes ResNet-18 ---")
+    model18 = resnet18_1d(in_channels=7, num_classes=2)
+    y18 = model18(x)
+    print('Input', x.shape, 'Output ResNet-18', y18.shape)
