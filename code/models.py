@@ -65,7 +65,7 @@ class ResNet1D(nn.Module):
 
         # global pooling + fc
         self.avgpool = nn.AdaptiveAvgPool1d(1)
-        self.dropout = nn.Dropout(p=0.5) # Nilai p=0.5 adalah awal yang baik
+        self.dropout = nn.Dropout(p=0.5) 
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         # init weights

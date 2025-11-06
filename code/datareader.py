@@ -37,7 +37,6 @@ class EEGDataset(Dataset):
         self.edf_files.sort()
 
         # baca CSV label
-        # csv_path logic: try relative to provided data_dir, otherwise try repo-level 'label/labels.csv'
         csv_path = os.path.join(os.path.dirname(data_dir), 'label', 'labels.csv')
         if not os.path.exists(csv_path):
             # fallback: label folder expected as sibling of this script's parent
