@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 
 # reproducibility
-RANDOM_SEED = 2004
+RANDOM_SEED = 2112
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
@@ -17,6 +17,11 @@ torch.manual_seed(RANDOM_SEED)
 class EEGDataset(Dataset):
     """
     EEG Dataset for 9-class KSS ordinal regression (KSS levels 1-9)
+    
+    Uses SUBJECT-LEVEL SPLIT to avoid data leakage:
+    - Training set: recordings from subset of subjects (e.g., subjects 1-11)
+    - Validation set: recordings from different subjects (e.g., subjects 12-14)
+    - Ensures model generalizes to NEW, UNSEEN subjects (subject-independent)
     
     Returns:
         signals: (C, T) tensor of EEG/EOG signals
@@ -86,15 +91,49 @@ class EEGDataset(Dataset):
 
         all_data = list(zip(self.edf_files, self.labels))
 
-        # 5-fold split
+        # ========== SUBJECT-LEVEL SPLIT  ==========
+        
+        def extract_subject_id(filename):
+            # Remove .edf extension
+            name_without_ext = filename.replace('.edf', '')
+            # Split by '-' and take first part (subject number)
+            subject = name_without_ext.split('-')[0]
+            return subject
+        
+        # Get unique subjects
+        subjects_with_files = {}
+        for fname, label in all_data:
+            subject_id = extract_subject_id(fname)
+            if subject_id not in subjects_with_files:
+                subjects_with_files[subject_id] = []
+            subjects_with_files[subject_id].append((fname, label))
+        
+        # Sort subjects for reproducibility
+        unique_subjects = sorted(subjects_with_files.keys())
+        
+        print(f"\nFound {len(unique_subjects)} unique subjects: {unique_subjects}")
+        
+        # 5-fold split on SUBJECTS (not on individual files/windows)
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
-        folds = list(kf.split(all_data))
-
-        train_idx, val_idx = folds[fold]
+        subject_folds = list(kf.split(unique_subjects))
+        
+        train_subject_idx, val_subject_idx = subject_folds[fold]
+        train_subjects = [unique_subjects[i] for i in train_subject_idx]
+        val_subjects = [unique_subjects[i] for i in val_subject_idx]
+        
+        print(f"\nFold {fold}:")
+        print(f"  Train subjects ({len(train_subjects)}): {train_subjects}")
+        print(f"  Val subjects ({len(val_subjects)}): {val_subjects}")
+        
+        # Get all files for train/val subjects
         if split == 'train':
-            self.data = [all_data[i] for i in train_idx]
+            self.data = []
+            for subject in train_subjects:
+                self.data.extend(subjects_with_files[subject])
         elif split == 'val':
-            self.data = [all_data[i] for i in val_idx]
+            self.data = []
+            for subject in val_subjects:
+                self.data.extend(subjects_with_files[subject])
         else:
             raise ValueError("Split must be 'train' or 'val'")
 
