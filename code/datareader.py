@@ -7,35 +7,49 @@ import pandas as pd
 import mne
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
+from collections import Counter
 
 # reproducibility
-RANDOM_SEED = 2112
+RANDOM_SEED = 23
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
+# KSS 1-9 to 3-class mapping
+def kss_to_class(kss_level):
+    if 1 <= kss_level <= 3:
+        return 0  # Alert
+    elif 4 <= kss_level <= 6:
+        return 1  # Low Vigilance
+    elif 7 <= kss_level <= 9:
+        return 2  # Drowsy
+    else:
+        raise ValueError(f"Invalid KSS level: {kss_level}")
+
+# compute class weights for imbalanced dataset
+def compute_class_weights(labels, num_classes=3):
+    label_counts = Counter(labels)
+    total = sum(label_counts.values())
+    
+    weights = []
+    for cls in range(num_classes):
+        count = label_counts.get(cls, 1)  # avoid division by zero
+        weight = total / (num_classes * count)
+        weights.append(weight)
+    
+    return torch.FloatTensor(weights)
+
+# EEG Dataset class
 class EEGDataset(Dataset):
-    """
-    EEG Dataset for 9-class KSS ordinal regression (KSS levels 1-9)
-    
-    Uses SUBJECT-LEVEL SPLIT to avoid data leakage:
-    - Training set: recordings from subset of subjects (e.g., subjects 1-11)
-    - Validation set: recordings from different subjects (e.g., subjects 12-14)
-    - Ensures model generalizes to NEW, UNSEEN subjects (subject-independent)
-    
-    Returns:
-        signals: (C, T) tensor of EEG/EOG signals
-        label: int from 0-8 (representing KSS 1-9)
-        ordinal_labels: (8,) binary tensor for ordinal regression
-    """
     TARGET_CHANNELS = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
+    CLASS_NAMES = ['Alert', 'Low Vigilance', 'Drowsy']
 
     def __init__(self,
                  data_dir='psg',
                  fold=0,
                  split='train',
                  n_splits=5,
-                 window_sec=5, 
+                 window_sec=1,  
                  transform=None,
                  random_offset=True):
 
@@ -52,7 +66,6 @@ class EEGDataset(Dataset):
         # baca CSV label
         csv_path = os.path.join(os.path.dirname(data_dir), 'label', 'labels.csv')
         if not os.path.exists(csv_path):
-            # fallback: label folder expected as sibling of this script's parent
             repo_root = os.path.dirname(os.path.dirname(__file__))
             alt = os.path.join(repo_root, 'label', 'labels.csv')
             if os.path.exists(alt):
@@ -63,8 +76,7 @@ class EEGDataset(Dataset):
 
         df = pd.read_csv(csv_path)
         
-        # Map KSS 1-9 to class labels 0-8
-        # KSS level 1 -> class 0, KSS level 2 -> class 1, ..., KSS level 9 -> class 8
+        # Map KSS 1-9 to 3-class labels using kss_to_class function
         mapped = []
         for _, row in df.iterrows():
             fname = row['filename']
@@ -75,8 +87,8 @@ class EEGDataset(Dataset):
                 
                 # Validate KSS range (1-9)
                 if 1 <= kss_level <= 9:
-                    # Convert to 0-indexed: KSS 1-9 -> class 0-8
-                    class_label = kss_level - 1
+                    # Convert to 3-class: 0=Alert, 1=Low Vig, 2=Drowsy
+                    class_label = kss_to_class(kss_level)
                     mapped.append((fname, class_label))
                 else:
                     print(f"Warning: Invalid KSS level {kss_level} in {fname}, skipping")
@@ -91,236 +103,264 @@ class EEGDataset(Dataset):
 
         all_data = list(zip(self.edf_files, self.labels))
 
-        # ========== SUBJECT-LEVEL SPLIT  ==========
+        # SUBJECT-LEVEL SPLIT) 
         
         def extract_subject_id(filename):
-            # Remove .edf extension
-            name_without_ext = filename.replace('.edf', '')
-            # Split by '-' and take first part (subject number)
-            subject = name_without_ext.split('-')[0]
-            return subject
+            """Extract subject ID from filename.
+            Example: 'subject01_pvt1.edf' → 'subject01'
+            """
+            if 'subject' in filename.lower():
+                parts = filename.split('_')
+                for part in parts:
+                    if 'subject' in part.lower():
+                        return part
+            return filename.split('_')[0]
         
-        # Get unique subjects
-        subjects_with_files = {}
-        for fname, label in all_data:
-            subject_id = extract_subject_id(fname)
-            if subject_id not in subjects_with_files:
-                subjects_with_files[subject_id] = []
-            subjects_with_files[subject_id].append((fname, label))
+        # Group by subject
+        subject_to_files = {}
+        for edf_file, label in all_data:
+            if label is None:
+                continue
+            subject_id = extract_subject_id(edf_file)
+            if subject_id not in subject_to_files:
+                subject_to_files[subject_id] = []
+            subject_to_files[subject_id].append((edf_file, label))
         
-        # Sort subjects for reproducibility
-        unique_subjects = sorted(subjects_with_files.keys())
+        # Get sorted list of unique subjects
+        unique_subjects = sorted(subject_to_files.keys())
+        n_subjects = len(unique_subjects)
         
-        print(f"\nFound {len(unique_subjects)} unique subjects: {unique_subjects}")
+        print(f"\n{'='*80}")
+        print(f"SUBJECT-LEVEL CROSS-VALIDATION")
+        print(f"{'='*80}")
+        print(f"Total unique subjects: {n_subjects}")
+        print(f"Subjects: {unique_subjects}")
         
-        # 5-fold split on SUBJECTS (not on individual files/windows)
-        kf = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
-        subject_folds = list(kf.split(unique_subjects))
+        # 5-fold split on SUBJECTS
+        kfold = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_SEED)
         
-        train_subject_idx, val_subject_idx = subject_folds[fold]
-        train_subjects = [unique_subjects[i] for i in train_subject_idx]
-        val_subjects = [unique_subjects[i] for i in val_subject_idx]
+        splits = list(kfold.split(unique_subjects))
+        train_idx, val_idx = splits[fold]
+        
+        train_subjects = [unique_subjects[i] for i in train_idx]
+        val_subjects = [unique_subjects[i] for i in val_idx]
         
         print(f"\nFold {fold}:")
         print(f"  Train subjects ({len(train_subjects)}): {train_subjects}")
         print(f"  Val subjects ({len(val_subjects)}): {val_subjects}")
         
-        # Get all files for train/val subjects
+        # Collect files based on split
         if split == 'train':
-            self.data = []
-            for subject in train_subjects:
-                self.data.extend(subjects_with_files[subject])
-        elif split == 'val':
-            self.data = []
-            for subject in val_subjects:
-                self.data.extend(subjects_with_files[subject])
+            selected_subjects = train_subjects
         else:
-            raise ValueError("Split must be 'train' or 'val'")
-
+            selected_subjects = val_subjects
+        
+        selected_files = []
+        for subject in selected_subjects:
+            selected_files.extend(subject_to_files[subject])
+        
+        print(f"  {split.capitalize()} files: {len(selected_files)}")
+        print(f"{'='*80}\n")
+        
+        # generate list window untuk semua file dalam split
         self.sample_rate = 512  
         self.sample_len = self.window_sec * self.sample_rate 
         self.windows = []
-
-        for fname, label in self.data:
-            if label is None:
-                continue
-                
-            edf_path = os.path.join(self.data_dir, fname)
+        
+        for edf_path, label in selected_files:
+            full_path = os.path.join(self.data_dir, edf_path)
             try:
-                raw = mne.io.read_raw_edf(edf_path, preload=False, verbose=False)
-                if not all(ch in raw.ch_names for ch in self.TARGET_CHANNELS):
-                    print(f"Warning: Skipping {fname} due to missing channels.")
-                    continue
-                    
+                raw = mne.io.read_raw_edf(full_path, preload=False, verbose=False)
                 n_samples = raw.n_times
+                max_start = n_samples - self.sample_len
+                if max_start < 0:
+                    continue  
+                
+                # buat daftar window start index
+                for start in range(0, max_start, self.sample_len):
+                    self.windows.append((edf_path, label, start))
+                    
             except Exception as e:
-                print(f"Error reading {fname}: {e}. Skipping file.")
+                print(f"Error reading {edf_path}: {e}")
                 continue
-
-            # random offset
-            offset = random.randint(0, self.sample_rate) if self.random_offset else 0
-
-            # buat daftar window start index
-            for start in range(offset, n_samples - self.sample_len, self.sample_len):
-                self.windows.append((edf_path, label, start))
-
+        
         random.shuffle(self.windows)
         
-        # Print dataset statistics
+        # Print distribution statistics
         if len(self.windows) > 0:
-            label_counts = {}
+            label_counts = Counter()
             for _, label, _ in self.windows:
-                label_counts[label] = label_counts.get(label, 0) + 1
-            print(f"\n{split.upper()} Dataset Statistics (Fold {fold}):")
+                label_counts[label] += 1
+            
             print(f"Total windows: {len(self.windows)}")
-            print("Class distribution (KSS level -> count):")
-            for kss_class in sorted(label_counts.keys()):
-                kss_level = kss_class + 1  # Convert back to KSS 1-9
-                print(f"  KSS {kss_level}: {label_counts[kss_class]} windows")
+            print(f"Class distribution ({split}):")
+            for cls in range(3):
+                count = label_counts[cls]
+                pct = 100 * count / len(self.windows)
+                print(f"  {self.CLASS_NAMES[cls]:15s} (class {cls}): {count:5d} windows ({pct:5.1f}%)")
 
     def __len__(self):
         return len(self.windows)
 
-    def _create_ordinal_labels(self, class_label):
-        """
-        Create ordinal labels for ordinal regression.
-        For 9 classes (0-8), we need 8 binary classifiers.
-        
-        Example: if class_label = 5 (KSS level 6):
-        ordinal_labels = [1, 1, 1, 1, 1, 0, 0, 0]
-        Meaning: P(Y > 0) = 1, P(Y > 1) = 1, ..., P(Y > 5) = 0
-        
-        Args:
-            class_label: int from 0 to 8
-        
-        Returns:
-            ordinal_labels: (8,) binary tensor
-        """
-        ordinal_labels = torch.zeros(8, dtype=torch.float32)
-        for i in range(class_label):
-            ordinal_labels[i] = 1.0
-        return ordinal_labels
-
     def __getitem__(self, idx):
         edf_path, label, start = self.windows[idx]
-
-        # load EDF
-        raw = mne.io.read_raw_edf(edf_path, preload=True, verbose=False)
-        picks = mne.pick_channels(raw.ch_names, include=self.TARGET_CHANNELS, ordered=True)
-        data, _ = raw[picks, start:start + self.sample_len]
+        full_path = os.path.join(self.data_dir, edf_path)
         
-        ch_names = [raw.ch_names[i] for i in picks]
-        reordered_data = []
-        for target_ch in self.TARGET_CHANNELS:
-            try:
-                idx_in_raw = ch_names.index(target_ch)
-                reordered_data.append(data[idx_in_raw])
-            except ValueError:
-                raise RuntimeError(f"Channel {target_ch} not found in {edf_path} at __getitem__")
+        # Random offset untuk augmentasi (hanya di train)
+        if self.random_offset and self.split == 'train':
+            # offset max ± 0.25s (128 samples)
+            max_offset = int(0.25 * self.sample_rate)
+            offset = random.randint(-max_offset, max_offset)
+            start = max(0, start + offset)
+        
+        # Baca hanya window yang dibutuhkan 
+        try:
+            raw = mne.io.read_raw_edf(full_path, preload=False, verbose=False)
+            
+            # Ensure start + sample_len doesn't exceed file length
+            if start + self.sample_len > raw.n_times:
+                start = raw.n_times - self.sample_len
+            
+            # Load specific time window
+            start_sec = start / self.sample_rate
+            stop_sec = (start + self.sample_len) / self.sample_rate
+            raw_crop = raw.copy().crop(tmin=start_sec, tmax=stop_sec, include_tmax=False)
+            raw_crop.load_data()
+            
+            # Pick channels
+            raw_crop.pick_channels(self.TARGET_CHANNELS, ordered=True)
+            
+            # Get data: shape (n_channels, n_times)
+            signals = raw_crop.get_data()  # (7, 512) for 1s window
+            
+            # Per-channel z-score normalization
+            signals = (signals - signals.mean(axis=1, keepdims=True)) / (signals.std(axis=1, keepdims=True) + 1e-6)
+            
+            # Convert to tensor
+            signals = torch.from_numpy(signals).float()
+            
+            # Apply transform if any
+            if self.transform:
+                signals = self.transform(signals)
+            
+            return signals, label
+            
+        except Exception as e:
+            print(f"Error loading window from {edf_path}: {e}")
+            # Return zeros if error
+            return torch.zeros(len(self.TARGET_CHANNELS), self.sample_len), label
 
-        signals = np.stack(reordered_data)
-        signals_tensor = torch.tensor(signals, dtype=torch.float32)
 
-        if self.transform:
-            signals_tensor = self.transform(signals_tensor)
-
-        # Create ordinal labels for ordinal regression
-        ordinal_labels = self._create_ordinal_labels(label)
-
-        return signals_tensor, label, ordinal_labels
-
-
-def default_transform(x: torch.Tensor) -> torch.Tensor:
+def get_dataloaders(data_dir='psg', fold=0, batch_size=32, num_workers=4):
     """
-    Per-channel z-score normalization.
-    x shape: (channels, samples)
-    """
-    mean = x.mean(dim=1, keepdim=True)
-    std = x.std(dim=1, keepdim=True)
-    return (x - mean) / (std + 1e-6)
-
-
-def collate_fn(batch):
-    """
-    Custom collate function for DataLoader
+    Create train and val dataloaders with subject-level split.
     
     Returns:
-        signals: (B, C, T)
-        labels: (B,) class labels (0-8)
-        ordinal_labels: (B, 8) ordinal binary labels
+        train_loader: DataLoader for training
+        val_loader: DataLoader for validation
+        class_weights: torch.FloatTensor of class weights for loss function
     """
-    signals = [item[0] for item in batch]
-    labels = [item[1] for item in batch]
-    ordinal_labels = [item[2] for item in batch]
+    train_dataset = EEGDataset(
+        data_dir=data_dir,
+        fold=fold,
+        split='train',
+        window_sec=1,  # 1 second windows
+        random_offset=True
+    )
     
-    signals = torch.stack(signals, dim=0)
-    labels = torch.tensor(labels, dtype=torch.long)
-    ordinal_labels = torch.stack(ordinal_labels, dim=0)
+    val_dataset = EEGDataset(
+        data_dir=data_dir,
+        fold=fold,
+        split='val',
+        window_sec=1,  # 1 second windows
+        random_offset=False
+    )
     
-    return signals, labels, ordinal_labels
+    # Compute class weights from training set
+    train_labels = [label for _, label, _ in train_dataset.windows]
+    class_weights = compute_class_weights(train_labels, num_classes=3)
+    
+    print(f"\n{'='*80}")
+    print(f"CLASS WEIGHTS (for handling imbalance)")
+    print(f"{'='*80}")
+    for cls in range(3):
+        print(f"  {train_dataset.CLASS_NAMES[cls]:15s} (class {cls}): {class_weights[cls]:.3f}")
+    print(f"{'='*80}\n")
+    
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+    
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+    
+    print(f"Train windows: {len(train_dataset)}")
+    print(f"Val windows: {len(val_dataset)}")
+    print(f"Batch size: {batch_size}")
+    print(f"Train batches: {len(train_loader)}")
+    print(f"Val batches: {len(val_loader)}\n")
+    
+    return train_loader, val_loader, class_weights
 
 
 if __name__ == "__main__":
-    data_dir_path = 'psg' 
+    print("Testing EEG Dataset with 3-class classification and 1s windows...")
     
-    if not os.path.exists(data_dir_path):
-        print(f"Directory '{data_dir_path}' not found.")
-        print("Make sure you run this script from the correct directory,")
-        print("or change the 'data_dir_path' variable in `if __name__ == '__main__':`")
+    # Test dataset creation
+    dataset = EEGDataset(
+        data_dir='psg',
+        fold=0,
+        split='train',
+        window_sec=1
+    )
+    
+    if len(dataset) > 0:
+        print(f"\nDataset size: {len(dataset)} windows")
+        
+        # Test a sample
+        for idx in range(min(3, len(dataset))):
+            print(f"\nSample window index {idx}")
+            signals, label = dataset[idx]
+            print(f"Signals shape: {signals.shape}")  # Should be (7, 512)
+            print(f"Label: {label} ({dataset.CLASS_NAMES[label]})")
+            print(f"Signal range: [{signals.min():.3f}, {signals.max():.3f}]")
     else:
-        fold = 0  
-        train_dataset = EEGDataset(
-            data_dir=data_dir_path, 
-            split='train', 
-            fold=fold,
-            transform=default_transform
+        print("No data found. Check your data_dir path.")
+    
+    # Test dataloader
+    print("\n" + "="*80)
+    print("Testing get_dataloaders()...")
+    print("="*80)
+    
+    try:
+        train_loader, val_loader, class_weights = get_dataloaders(
+            data_dir='psg',
+            fold=0,
+            batch_size=16,
+            num_workers=0
         )
-        val_dataset = EEGDataset(
-            data_dir=data_dir_path, 
-            split='val', 
-            fold=fold,
-            transform=default_transform
-        )
-
-        print(f"\n{'='*60}")
-        print(f"Fold {fold+1} Summary")
-        print(f"{'='*60}")
-        print(f"Train windows: {len(train_dataset)}")
-        print(f"Val windows: {len(val_dataset)}")
-
-        # Test get item
-        if len(train_dataset) > 0:
-            idx = random.randint(0, len(train_dataset) - 1)
-            signals, label, ordinal_labels = train_dataset[idx]
-
-            print(f"\n{'='*60}")
-            print(f"Sample window index {idx}")
-            print(f"{'='*60}")
-            print(f"Signals shape: {signals.shape}")  # (7, 2560)
-            print(f"Class label: {label} (KSS level {label + 1})")
-            print(f"Ordinal labels: {ordinal_labels}")
-            print(f"Channel names: {train_dataset.TARGET_CHANNELS}")
-
-            # Plot signals
-            n_channels = signals.shape[0]
-            fig, axes = plt.subplots(n_channels, 1, figsize=(14, 10), sharex=True)
-            kss_level = label + 1
-            fig.suptitle(f"KSS Level {kss_level} (Class {label})", fontsize=16, fontweight='bold')
-
-            for i in range(n_channels):
-                axes[i].plot(signals[i].numpy(), linewidth=0.5)
-                axes[i].set_ylabel(train_dataset.TARGET_CHANNELS[i], 
-                                 rotation=0, labelpad=40, fontsize=10, fontweight='bold')
-                axes[i].grid(True, alpha=0.3)
-                axes[i].tick_params(labelsize=8)
-
-            axes[-1].set_xlabel("Sample Points", fontsize=10)
-            plt.tight_layout(rect=[0, 0, 1, 0.97])
-            
-            # Save plot
-            os.makedirs('outputs', exist_ok=True)
-            plt.savefig(f'outputs/sample_kss_{kss_level}.png', dpi=150, bbox_inches='tight')
-            print(f"\nPlot saved to: outputs/sample_kss_{kss_level}.png")
-            plt.close()
-        else:
-            print("\nNo training data to plot. Check data folder and CSV file.")
+        
+        print(f"\nClass weights: {class_weights}")
+        
+        # Test one batch
+        for batch_signals, batch_labels in train_loader:
+            print(f"\nBatch signals shape: {batch_signals.shape}")  # (B, 7, 512)
+            print(f"Batch labels shape: {batch_labels.shape}")  # (B,)
+            print(f"Batch labels: {batch_labels}")
+            break
+        
+        print("\n✅ Datareader test successful!")
+        
+    except Exception as e:
+        print(f"\n❌ Error testing dataloader: {e}")
+        import traceback
+        traceback.print_exc()

@@ -1,14 +1,3 @@
-"""
-Training Script for Drowsiness Detection using Mamba with Ordinal Regression
-
-Features:
-- 9-class KSS ordinal regression
-- MLflow experiment tracking
-- GPU support with mixed precision training
-- Model architecture summary
-- Cross-validation support
-"""
-
 import os
 import argparse
 import time
@@ -34,7 +23,6 @@ from config import Config
 
 
 class EarlyStopping:
-    """Early stopping to stop training when validation loss doesn't improve."""
     
     def __init__(self, patience=7, min_delta=0, verbose=True):
         self.patience = patience

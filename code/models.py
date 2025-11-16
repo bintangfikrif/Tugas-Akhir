@@ -2,12 +2,13 @@
 Mamba Model for Drowsiness Detection from EEG/EOG Signals
 
 Architecture:
-- Input: (B, C, T) where C=7 channels, T=2560 time steps
+- Input: (B, C, T) where C=7 channels, T=512 time steps (1 second at 512 Hz)
 - Channel projection: Conv1d to project 7 channels to d_model
 - Mamba blocks: N layers of bidirectional Mamba SSM
-- Output heads: 
-    - Ordinal regression head: (B, 8) for P(Y > k) predictions
-    - Optional classification head: (B, 9) for class probabilities
+- Output head: (B, 3) for 3-class classification
+    - Class 0: Alert (KSS 1-3)
+    - Class 1: Low Vigilance (KSS 4-6)
+    - Class 2: Drowsy (KSS 7-9)
 """
 
 import torch
@@ -16,7 +17,6 @@ import torch.nn.functional as F
 from mamba_ssm import Mamba
 from einops import rearrange
 import math
-
 
 class MambaBlock(nn.Module):
     """
@@ -79,11 +79,16 @@ class MambaEncoder(nn.Module):
 
 class MambaDrowsinessDetector(nn.Module):
     """
-    Mamba-based Drowsiness Detection Model for 9-class KSS ordinal regression.
+    Mamba-based Drowsiness Detection Model for 3-class classification.
+    
+    Classes:
+        0: Alert (KSS 1-3)
+        1: Low Vigilance (KSS 4-6)
+        2: Drowsy (KSS 7-9)
     
     Args:
         in_channels: Number of input EEG/EOG channels (default: 7)
-        num_classes: Number of KSS classes (default: 9)
+        num_classes: Number of classes (default: 3)
         d_model: Hidden dimension for Mamba (default: 128)
         n_layers: Number of Mamba layers (default: 4)
         d_state: SSM state expansion factor (default: 16)
@@ -95,7 +100,7 @@ class MambaDrowsinessDetector(nn.Module):
     def __init__(
         self,
         in_channels=7,
-        num_classes=9,
+        num_classes=3,  # CHANGED: 9 → 3
         d_model=128,
         n_layers=4,
         d_state=16,
@@ -138,20 +143,12 @@ class MambaDrowsinessDetector(nn.Module):
         # Dropout
         self.dropout = nn.Dropout(dropout)
         
-        # Ordinal regression head (K-1 binary classifiers for K classes)
-        self.ordinal_head = nn.Sequential(
+        # Classification head for 3-class classification
+        self.classifier = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model // 2, num_classes - 1)  # 8 binary classifiers for 9 classes
-        )
-        
-        # Optional: Classification head for auxiliary loss
-        self.class_head = nn.Sequential(
-            nn.Linear(d_model, d_model // 2),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model // 2, num_classes)  # 9 classes
+            nn.Linear(d_model // 2, num_classes)  # CHANGED: Output 3 logits
         )
         
         self._init_weights()
@@ -168,15 +165,16 @@ class MambaDrowsinessDetector(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
     
-    def forward(self, x, return_class_logits=False):
+    def forward(self, x):
         """
         Args:
             x: (B, C, T) input EEG/EOG signals
-            return_class_logits: whether to return class logits for auxiliary loss
+                B = batch size
+                C = 7 channels (Fz, Cz, C3, C4, Pz, EOG-V, EOG-H)
+                T = 512 time steps (1 second at 512 Hz)
             
         Returns:
-            ordinal_logits: (B, K-1) logits for ordinal regression
-            class_logits: (B, K) logits for classification (if return_class_logits=True)
+            logits: (B, 3) logits for 3-class classification
         """
         B, C, T = x.shape
         
@@ -209,14 +207,10 @@ class MambaDrowsinessDetector(nn.Module):
         # Dropout
         x = self.dropout(x)
         
-        # Ordinal regression head
-        ordinal_logits = self.ordinal_head(x)  # (B, 8)
+        # Classification head: (B, D) -> (B, 3)
+        logits = self.classifier(x)
         
-        if return_class_logits:
-            class_logits = self.class_head(x)  # (B, 9)
-            return ordinal_logits, class_logits
-        else:
-            return ordinal_logits
+        return logits
     
     def get_num_params(self):
         """Get total number of parameters."""
@@ -278,11 +272,8 @@ class ResNet1D(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool1d(1)
         self.dropout = nn.Dropout(p=0.5)
         
-        # Ordinal regression head
-        self.ordinal_head = nn.Linear(512 * block.expansion, num_classes - 1)
-        
-        # Classification head
-        self.class_head = nn.Linear(512 * block.expansion, num_classes)
+        # Classification head for 3-class classification
+        self.classifier = nn.Linear(512 * block.expansion, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
@@ -327,13 +318,8 @@ class ResNet1D(nn.Module):
         x = torch.flatten(x, 1)
         x = self.dropout(x)
         
-        ordinal_logits = self.ordinal_head(x)
-        
-        if return_class_logits:
-            class_logits = self.class_head(x)
-            return ordinal_logits, class_logits
-        else:
-            return ordinal_logits
+        logits = self.classifier(x)
+        return logits
     
     def get_num_params(self):
         return sum(p.numel() for p in self.parameters())
@@ -342,14 +328,14 @@ class ResNet1D(nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-def resnet18_1d(in_channels=7, num_classes=9):
+def resnet18_1d(in_channels=7, num_classes=3):
     """Constructs a ResNet-18 model for 1D signals."""
     return ResNet1D(BasicBlock1D, [2, 2, 2, 2], in_channels=in_channels, num_classes=num_classes)
 
 
 # ==================== Model Factory ====================
 
-def create_model(model_name, in_channels=7, num_classes=9, **kwargs):
+def create_model(model_name, in_channels=7, num_classes=3, **kwargs):
     """
     Factory function to create models.
     
