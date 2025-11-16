@@ -1,16 +1,3 @@
-"""
-Mamba Model for Drowsiness Detection from EEG/EOG Signals
-
-Architecture:
-- Input: (B, C, T) where C=7 channels, T=512 time steps (1 second at 512 Hz)
-- Channel projection: Conv1d to project 7 channels to d_model
-- Mamba blocks: N layers of bidirectional Mamba SSM
-- Output head: (B, 3) for 3-class classification
-    - Class 0: Alert (KSS 1-3)
-    - Class 1: Low Vigilance (KSS 4-6)
-    - Class 2: Drowsy (KSS 7-9)
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -166,16 +153,6 @@ class MambaDrowsinessDetector(nn.Module):
                     nn.init.constant_(m.bias, 0)
     
     def forward(self, x):
-        """
-        Args:
-            x: (B, C, T) input EEG/EOG signals
-                B = batch size
-                C = 7 channels (Fz, Cz, C3, C4, Pz, EOG-V, EOG-H)
-                T = 512 time steps (1 second at 512 Hz)
-            
-        Returns:
-            logits: (B, 3) logits for 3-class classification
-        """
         B, C, T = x.shape
         
         # Input projection: (B, C, T) -> (B, D, T)
@@ -333,7 +310,7 @@ def resnet18_1d(in_channels=7, num_classes=3):
     return ResNet1D(BasicBlock1D, [2, 2, 2, 2], in_channels=in_channels, num_classes=num_classes)
 
 
-# ==================== Model Factory ====================
+# Model Factory
 
 def create_model(model_name, in_channels=7, num_classes=3, **kwargs):
     """
