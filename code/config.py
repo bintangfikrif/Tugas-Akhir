@@ -15,8 +15,8 @@ class Config:
     
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
-    NUM_CLASSES = 9      # KSS levels: 1-9
-    WINDOW_SEC = 5       # Window size in seconds
+    NUM_CLASSES = 3      # KSS levels: 1-9
+    WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
     
     # ==================== Training Parameters ====================
@@ -50,8 +50,8 @@ class Config:
     # ==================== Paths ====================
     DATA_DIR = "psg"
     CHECKPOINT_DIR = "checkpoints"
-    MLFLOW_TRACKING_URI = "./mlruns"
-    MLFLOW_EXPERIMENT_NAME = "drowsiness-detection-mamba"
+    USE_WANDB = True
+    WANDB_PROJECT = "Drowsiness-Mamba-DROZY"
     
     # ==================== Device ====================
     USE_CUDA = True
