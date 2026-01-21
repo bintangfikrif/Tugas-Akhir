@@ -101,3 +101,14 @@ class EEGDataset(Dataset):
         tensor = self._normalize_subject(tensor)
 
         return tensor, label
+    
+def collate_fn(batch):
+    """
+    Custom collate function untuk menggabungkan sampel EEG menjadi batch.
+    Sesuai standar pemrosesan sinyal 30 detik[cite: 495].
+    """
+    # item[0] adalah tensor sinyal, item[1] adalah label
+    signals = torch.stack([item[0] for item in batch])
+    labels = torch.tensor([item[1] for item in batch], dtype=torch.long)
+    
+    return signals, labels
