@@ -547,7 +547,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
                     'val_acc': val_acc.item(),
                     'val_f1': val_f1_macro,
                     'class_weights': class_weights,
-                    'config': Config.to_dict()
+                    'config': clean_config
                 }
                 
                 torch.save(checkpoint, model_name)
