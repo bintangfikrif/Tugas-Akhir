@@ -33,10 +33,7 @@ def compute_inverse_weight(labels, num_classes=3):
     return torch.tensor(weights, dtype=torch.float32)
 
 def get_evaluation_metrics(predictions, targets):
-    """
-    Menghitung Accuracy, Precision, Recall, dan F1-Score sesuai Bab III[cite: 515, 612].
-    """
-    # Accuracy: (TP + TN) / Total [cite: 389]
+    # Accuracy: (TP + TN) / Total
     acc = (predictions == targets).float().mean()
     
     # Per-class metrics menggunakan rata-rata makro
@@ -47,10 +44,9 @@ def get_evaluation_metrics(predictions, targets):
         fp = ((predictions == cls) & (targets != cls)).sum().float()
         fn = ((predictions != cls) & (targets == cls)).sum().float()
         
-        precision = tp / (tp + fp + 1e-6) # [cite: 391]
-        recall = tp / (tp + fn + 1e-6)    # [cite: 399]
-        f1 = 2 * (precision * recall) / (precision + recall + 1e-6) # [cite: 405, 407]
-        
+        precision = tp / (tp + fp + 1e-6) 
+        recall = tp / (tp + fn + 1e-6)   
+        f1 = 2 * (precision * recall) / (precision + recall + 1e-6) 
         metrics[f'class_{cls}'] = {'p': precision, 'r': recall, 'f1': f1}
         
     return acc, metrics

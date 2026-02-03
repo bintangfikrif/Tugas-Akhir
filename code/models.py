@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mamba_ssm import Mamba
 from einops import rearrange
+from config import Config
 
 class MambaBlock(nn.Module):
     """
@@ -24,28 +25,22 @@ class MambaBlock(nn.Module):
         Args:
             x: (B, L, D) -> Batch, Length, Dimension
         """
-        # Pre-normalization dengan residual connection [cite: 352]
+        # Pre-normalization dengan residual connection 
         residual = x
         x = self.norm(x)
         x = self.mamba(x)
         return x + residual
 
 class MambaDrowsinessDetector(nn.Module):
-    """
-    Model Deteksi Kantuk berbasis Mamba sesuai Proposal Tugas Akhir Bintang.
-    - Input: 7 Channel (5 EEG, 2 EOG) [cite: 478]
-    - Arsitektur: Conv1D -> Mamba Encoder (4 Block) -> Global Avg Pool -> Linear [cite: 543, 547]
-    - Output: 3 Kelas (Alert, Low Vigilance, Drowsy) 
-    """
     def __init__(
         self,
-        in_channels=7,
-        num_classes=3, 
-        d_model=128,
-        n_layers=4,    # Sesuai proposal: 4 blok Mamba [cite: 547]
-        d_state=16,
-        d_conv=4,
-        expand=2,
+        in_channels=Config.IN_CHANNELS,
+        num_classes=Config.NUM_CLASSES, 
+        d_model=Config.MAMBA_D_MODEL,
+        n_layers=Config.MAMBA_N_LAYERS,    
+        d_state=Config.MAMBA_D_STATE,
+        d_conv=Config.MAMBA_D_CONV,
+        expand=Config.MAMBA_EXPAND,
         dropout=0.1,
     ):
         super(MambaDrowsinessDetector, self).__init__()
@@ -64,7 +59,7 @@ class MambaDrowsinessDetector(nn.Module):
             torch.randn(1, self.max_seq_len, d_model) * 0.02
         )
         
-        # 3. Mamba Encoder: Stack dari 4 blok Mamba [cite: 547]
+        # 3. Mamba Encoder: Stack dari 4 blok Mamba
         self.layers = nn.ModuleList([
             MambaBlock(d_model, d_state, d_conv, expand)
             for _ in range(n_layers)
@@ -72,10 +67,10 @@ class MambaDrowsinessDetector(nn.Module):
         
         self.final_norm = nn.LayerNorm(d_model)
         
-        # 4. Global Temporal Pooling [cite: 552]
+        # 4. Global Temporal Pooling
         self.pooling = nn.AdaptiveAvgPool1d(1)
         
-        # 5. Classifier Head [cite: 552]
+        # 5. Classifier Head
         self.classifier = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.GELU(),
@@ -84,10 +79,6 @@ class MambaDrowsinessDetector(nn.Module):
         )
 
     def forward(self, x):
-        """
-        Forward pass model.
-        Input x: (B, 7, 15360) -> (Batch, Channels, Time) [cite: 544]
-        """
         # Ekstraksi fitur lokal awal
         x = self.input_projection(x)  # (B, d_model, T)
         
@@ -98,13 +89,13 @@ class MambaDrowsinessDetector(nn.Module):
         T = x.shape[1]
         x = x + self.pos_encoding[:, :T, :]
         
-        # Proses melalui 4 blok Mamba [cite: 547]
+        # Proses melalui 4 blok Mamba
         for layer in self.layers:
             x = layer(x)
         
         x = self.final_norm(x)
         
-        # Pooling untuk meringkas sekuens menjadi vektor representasi [cite: 551]
+        # Pooling untuk meringkas sekuens menjadi vektor representasi
         x = rearrange(x, 'b t d -> b d t')
         x = self.pooling(x).squeeze(-1) # (B, D)
         
@@ -113,5 +104,4 @@ class MambaDrowsinessDetector(nn.Module):
         return logits
 
     def get_num_params(self):
-        """Menghitung total parameter model [cite: 416]"""
         return sum(p.numel() for p in self.parameters())

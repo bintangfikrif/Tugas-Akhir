@@ -15,7 +15,7 @@ class Config:
     
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
-    NUM_CLASSES = 3      # KSS levels: 1-9
+    NUM_CLASSES = 3      # KSS Categories: Alert, Low Vigilance, Drowsy
     WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
     
