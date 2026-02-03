@@ -13,33 +13,13 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
-
 class EEGAugmentation:
-    """
-    Augmentasi data EEG untuk meningkatkan generalisasi model.
-    Diterapkan hanya pada data training.
-    
-    Metode augmentasi:
-    1. Gaussian Noise - Menambahkan noise acak
-    2. Amplitude Scaling - Mengubah skala amplitudo
-    3. Time Shift - Menggeser sinyal secara temporal
-    
-    Ref: Sesuai dengan Config.py yang telah didefinisikan
-    """
     def __init__(self, 
                  gaussian_std=0.01,
                  amplitude_range=(0.9, 1.1),
                  time_shift_max=256,
                  prob=0.5,
                  use_augmentation=True):
-        """
-        Args:
-            gaussian_std: Standar deviasi untuk Gaussian noise
-            amplitude_range: Range untuk amplitude scaling (min, max)
-            time_shift_max: Maksimal pergeseran waktu (dalam samples)
-            prob: Probabilitas untuk setiap jenis augmentasi
-            use_augmentation: Flag untuk enable/disable augmentasi
-        """
         self.gaussian_std = gaussian_std
         self.amplitude_range = amplitude_range
         self.time_shift_max = time_shift_max
@@ -47,59 +27,24 @@ class EEGAugmentation:
         self.use_augmentation = use_augmentation
     
     def add_gaussian_noise(self, signal):
-        """
-        Menambahkan Gaussian noise ke sinyal.
-        Berguna untuk membuat model lebih robust terhadap noise.
-        
-        Args:
-            signal: (C, T) tensor
-        Returns:
-            Augmented signal
-        """
         if np.random.rand() < self.prob:
             noise = torch.randn_like(signal) * self.gaussian_std
             signal = signal + noise
         return signal
     
     def amplitude_scaling(self, signal):
-        """
-        Mengubah skala amplitudo sinyal secara random.
-        Mensimulasikan variasi intensitas sinyal antar subjek.
-        
-        Args:
-            signal: (C, T) tensor
-        Returns:
-            Augmented signal
-        """
         if np.random.rand() < self.prob:
             scale = np.random.uniform(*self.amplitude_range)
             signal = signal * scale
         return signal
     
     def time_shift(self, signal):
-        """
-        Menggeser sinyal secara temporal (circular shift).
-        Membantu model belajar invariansi terhadap translasi temporal.
-        
-        Args:
-            signal: (C, T) tensor
-        Returns:
-            Augmented signal
-        """
         if np.random.rand() < self.prob:
             shift = np.random.randint(-self.time_shift_max, self.time_shift_max)
             signal = torch.roll(signal, shift, dims=-1)
         return signal
     
     def __call__(self, signal):
-        """
-        Aplikasikan augmentasi secara berurutan.
-        
-        Args:
-            signal: (C, T) tensor - 7 channels × time points
-        Returns:
-            Augmented signal
-        """
         if not self.use_augmentation:
             return signal
         
@@ -112,20 +57,6 @@ class EEGAugmentation:
 
 
 class EEGDataset(Dataset):
-    """
-    Dataset DROZY untuk Klasifikasi 3-Kelas Kantuk.
-    
-    Features:
-    - Window: 30 Detik sesuai standar AASM
-    - Validasi: Subject-Wise K-Fold Cross Validation
-    - Normalisasi: Z-Score per subjek
-    - Augmentasi: Gaussian Noise, Amplitude Scaling, Time Shift (hanya training)
-    
-    Kelas:
-    - 0: Alert (KSS 1-3)
-    - 1: Low Vigilance (KSS 4-6)
-    - 2: Drowsy (KSS 7-9)
-    """
     TARGET_CHANNELS = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
 
     def __init__(self,
@@ -242,19 +173,6 @@ class EEGDataset(Dataset):
         print(f"   Total: {len(self.windows)} windows\n")
 
     def _compute_subject_stats(self, files):
-        """
-        Menghitung mean & std per subjek untuk normalisasi yang konsisten.
-        Sesuai strategi normalisasi Z-score berbasis data latih (proposal hal. 33).
-        
-        PENTING: Normalisasi harus dilakukan per subjek, bukan per window,
-        untuk menghindari kebocoran informasi.
-        
-        Args:
-            files: List of EDF filenames
-        
-        Returns:
-            dict: Dictionary berisi statistik per file
-        """
         stats = {}
         
         for fname in files:
@@ -280,19 +198,6 @@ class EEGDataset(Dataset):
         return stats
 
     def _normalize_subject(self, tensor, fname):
-        """
-        Z-Score Normalization menggunakan statistik subjek.
-        Z = (X - mu) / sigma
-        
-        Sesuai Rumus 2.1 (hal. 15) Proposal Tugas Akhir.
-        
-        Args:
-            tensor: (C, T) EEG signal
-            fname: Filename untuk lookup statistik
-        
-        Returns:
-            Normalized tensor
-        """
         mu = self.subject_stats[fname]['mean']
         sigma = self.subject_stats[fname]['std']
         
@@ -342,18 +247,6 @@ class EEGDataset(Dataset):
     
 
 def collate_fn(batch):
-    """
-    Custom collate function untuk menggabungkan sampel EEG menjadi batch.
-    Sesuai standar pemrosesan sinyal 30 detik.
-    
-    Args:
-        batch: List of (signal, label) tuples
-    
-    Returns:
-        tuple: (signals, labels)
-            - signals: (B, 7, 15360) tensor
-            - labels: (B,) tensor
-    """
     signals = torch.stack([item[0] for item in batch])
     labels = torch.tensor([item[1] for item in batch], dtype=torch.long)
     
@@ -362,10 +255,6 @@ def collate_fn(batch):
 
 # ✅ Test function untuk validasi dataset
 def test_dataset():
-    """
-    Fungsi untuk testing dataset secara cepat.
-    Jalankan dengan: python datareader.py
-    """
     print("="*60)
     print("🧪 TESTING DATASET")
     print("="*60)
