@@ -534,6 +534,11 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             
             if Config.SAVE_BEST_ONLY:
                 model_name = f"best_mamba_fold{current_fold}.pt"
+                raw_config = Config.to_dict()
+                clean_config = {
+                    k: v for k, v in raw_config.items() 
+                    if not isinstance(v, (classmethod, staticmethod)) and not callable(v)
+                }
                 checkpoint = {
                     'epoch': epoch + 1,
                     'fold': current_fold,
