@@ -273,13 +273,22 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     print(f"   ├─ Data Augmentation: {Config.USE_AUGMENTATION}")  # ✅ Log augmentation status
     print("="*70)
     
-    # --- 2. Inisialisasi WandB ---
+# --- 2. Inisialisasi WandB ---
     if Config.USE_WANDB:
+        # Ambil config mentah
+        raw_config = Config.to_dict()
+        
+        # FILTER: Buang item yang berupa function atau classmethod agar tidak error
+        clean_config = {
+            k: v for k, v in raw_config.items() 
+            if not k.startswith('__') and not isinstance(v, (classmethod, staticmethod)) and not callable(v)
+        }
+
         wandb.init(
             project=Config.WANDB_PROJECT,
             name=f"Mamba_Fold_{current_fold}",
-            config=Config.to_dict(),  # ✅ Log semua config
-            reinit=True  # ✅ Penting untuk multiple folds
+            config=clean_config,  
+            reinit=True  
         )
 
     # --- 3. Persiapan Dataset & Dataloader ---
