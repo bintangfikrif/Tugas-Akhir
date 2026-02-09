@@ -141,17 +141,6 @@ def plot_confusion_matrix(y_true, y_pred, epoch, fold, phase='val', save_dir='co
     return cm
 
 def compute_per_class_metrics(cm, class_names=['Alert', 'Low Vigilance', 'Drowsy']):
-    """
-    Menghitung metrik per-kelas dari confusion matrix.
-    Sesuai ilustrasi perhitungan Bab III (hal. 37-38).
-    
-    Args:
-        cm: Confusion matrix (numpy array)
-        class_names: Nama-nama kelas
-    
-    Returns:
-        dict: Dictionary berisi precision, recall, f1-score per kelas
-    """
     metrics = {}
     
     for i, class_name in enumerate(class_names):
@@ -237,15 +226,6 @@ def print_classification_report(cm, class_names=['Alert', 'Low Vigilance', 'Drow
     return metrics
 
 def train(fold=0):  # ✅ TAMBAHKAN parameter fold
-    """
-    Fungsi training untuk satu fold cross-validation.
-    
-    Args:
-        fold: Indeks fold (0-4 untuk 5-fold CV)
-    
-    Returns:
-        tuple: (best_val_acc, best_val_f1)
-    """
     # --- 1. Konfigurasi Eksperimen ---
     device = torch.device("cuda" if Config.USE_CUDA and torch.cuda.is_available() else "cpu")
     
@@ -286,7 +266,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Mamba_Fold_{current_fold}",
+            name=f"Mamba_Fold_{current_fold}_SlidingWindow",
             config=clean_config,  
             reinit=True  
         )
@@ -339,7 +319,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     # --- 4. Penanganan Ketidakseimbangan Data ---
     train_labels = [item[2] for item in train_dataset.windows]  # ✅ Index 2 karena format baru (fname, path, label, start)
     class_weights = compute_inverse_weight(train_labels, num_classes=Config.NUM_CLASSES).to(device)
-    print(f"\n⚖️  Bobot Kelas (Fold {current_fold}): {class_weights}")
+    print(f"\nBobot Kelas (Fold {current_fold}): {class_weights}")
 
     # --- 5. Inisialisasi Model ---
     # ✅ GUNAKAN Config untuk parameter model

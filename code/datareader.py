@@ -4,307 +4,200 @@ import torch
 import pandas as pd
 import mne
 import random
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import GroupKFold
+from config import Config
 
-# Konfigurasi Reproduksibilitas
+# ==========================================
+# 1. KONFIGURASI SEED (Agar Hasil Konsisten)
+# ==========================================
 RANDOM_SEED = 2004
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
+# ==========================================
+# 2. KELAS AUGMENTASI DATA
+# ==========================================
 class EEGAugmentation:
     def __init__(self, 
-                 gaussian_std=0.01,
-                 amplitude_range=(0.9, 1.1),
-                 time_shift_max=256,
-                 prob=0.5,
-                 use_augmentation=True):
+                 gaussian_std=Config.AUG_GAUSSIAN_NOISE_STD,
+                 amplitude_range=Config.AUG_AMPLITUDE_SCALE_RANGE,
+                 time_shift_max=Config.AUG_TIME_SHIFT_MAX,
+                 prob=0.5):
         self.gaussian_std = gaussian_std
         self.amplitude_range = amplitude_range
         self.time_shift_max = time_shift_max
         self.prob = prob
-        self.use_augmentation = use_augmentation
     
     def add_gaussian_noise(self, signal):
+        """Menambahkan noise putih acak ke sinyal"""
         if np.random.rand() < self.prob:
             noise = torch.randn_like(signal) * self.gaussian_std
             signal = signal + noise
         return signal
     
     def amplitude_scaling(self, signal):
+        """Mengalikan sinyal dengan faktor acak (misal: 0.9x - 1.1x)"""
         if np.random.rand() < self.prob:
             scale = np.random.uniform(*self.amplitude_range)
             signal = signal * scale
         return signal
     
     def time_shift(self, signal):
+        """Menggeser sinyal ke kiri/kanan (Rolling)"""
         if np.random.rand() < self.prob:
             shift = np.random.randint(-self.time_shift_max, self.time_shift_max)
-            signal = torch.roll(signal, shift, dims=-1)
-        return signal
-    
-    def __call__(self, signal):
-        if not self.use_augmentation:
-            return signal
-        
-        # Terapkan augmentasi secara berurutan
-        signal = self.add_gaussian_noise(signal)
-        signal = self.amplitude_scaling(signal)
-        signal = self.time_shift(signal)
-        
+            signal = torch.roll(signal, shifts=shift, dims=1)
         return signal
 
-
+# ==========================================
+# 3. DATASET UTAMA DENGAN SLIDING WINDOW
+# ==========================================
 class EEGDataset(Dataset):
-    TARGET_CHANNELS = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
-
-    def __init__(self,
-                 data_dir='psg',
-                 csv_path='label/labels.csv',
-                 fold=0,
-                 split='train',
-                 n_splits=5,
-                 window_sec=30,
-                 # ✅ Parameter Augmentasi
-                 use_augmentation=True,
-                 aug_gaussian_std=0.01,
-                 aug_amplitude_range=(0.9, 1.1),
-                 aug_time_shift_max=256,
-                 aug_prob=0.5):
-        
+    def __init__(self, data_dir, csv_path, fold, split, n_splits, window_sec, stride_sec, use_augmentation=False):
         self.data_dir = data_dir
         self.window_sec = window_sec
-        self.sample_rate = 512
-        self.sample_len = window_sec * self.sample_rate  # 30 * 512 = 15360
-        self.split = split
+        self.stride_sec = stride_sec
+        self.use_augmentation = use_augmentation
         
-        # ✅ Inisialisasi Augmentasi (hanya untuk training)
-        if split == 'train' and use_augmentation:
-            self.transform = EEGAugmentation(
-                gaussian_std=aug_gaussian_std,
-                amplitude_range=aug_amplitude_range,
-                time_shift_max=aug_time_shift_max,
-                prob=aug_prob,
-                use_augmentation=True
-            )
-            print(f"✅ Data Augmentation ENABLED untuk {split} set")
-            print(f"   ├─ Gaussian Noise: std={aug_gaussian_std}")
-            print(f"   ├─ Amplitude Scaling: {aug_amplitude_range}")
-            print(f"   ├─ Time Shift: max={aug_time_shift_max} samples")
-            print(f"   └─ Probability: {aug_prob}")
-        else:
-            self.transform = None
-            if split == 'train':
-                print(f"⚠️  Data Augmentation DISABLED untuk {split} set")
-
-        # 1. Load Labels & Mapping KSS ke 3 Kelas
+        # --- A. LOGIKA SPLITTING SUBJECT-WISE ---
+        # Membaca CSV Label
         df = pd.read_csv(csv_path)
-        self.label_dict = {}
         
-        for _, row in df.iterrows():
-            kss = int(row['label'])
-            # Mapping 3 Kelas: Alert(0), Low Vigilance(1), Drowsy(2)
-            # Sesuai proposal hal. 32
-            if kss <= 3:
-                label = 0  # Alert
-            elif kss <= 6:
-                label = 1  # Low Vigilance
-            else:
-                label = 2  # Drowsy
-            
-            self.label_dict[row['filename']] = label
+        # Pastikan kolom subject_id ada untuk grouping
+        if 'subject_id' not in df.columns:
+            # Jika tidak ada, coba extract dari filename (misal: s01_t02 -> s01)
+            df['subject_id'] = df['filename'].apply(lambda x: x.split('_')[0])
 
-        # 2. Subject-Wise Split untuk mencegah data leakage
-        self.edf_files = [
-            f for f in os.listdir(data_dir) 
-            if f.endswith('.edf') and f in self.label_dict
-        ]
-        self.edf_files.sort()
-        
-        # Extract subject ID dari filename (format: SubjectID-SessionID.edf)
-        self.subjects = [f.split('-')[0] for f in self.edf_files]
-
-        # Group K-Fold untuk memastikan satu subjek hanya di satu fold
+        # GroupKFold memastikan 1 subjek tidak bocor antara train & val
         gkf = GroupKFold(n_splits=n_splits)
-        folds = list(gkf.split(self.edf_files, groups=self.subjects))
+        # Kita butuh list indeks untuk fold tertentu
+        splits = list(gkf.split(df, df['label'], groups=df['subject_id']))
+        train_idx, val_idx = splits[fold]
         
-        train_idx, val_idx = folds[fold]
-        selected_files = [
-            self.edf_files[i] for i in (train_idx if split == 'train' else val_idx)
-        ]
-
-        print(f"\n📂 Dataset Info - Fold {fold} ({split}):")
-        print(f"   ├─ Total files: {len(selected_files)}")
-        print(f"   ├─ Unique subjects: {len(set([f.split('-')[0] for f in selected_files]))}")
-
-        # 3. Pre-compute statistik normalisasi per subjek
-        # Penting untuk konsistensi normalisasi Z-score
-        print(f"   └─ Computing normalization statistics...")
-        self.subject_stats = self._compute_subject_stats(selected_files)
-
-        # 4. Pre-load semua windows untuk efisiensi
-        self.windows = []
-        class_counts = {0: 0, 1: 0, 2: 0}
+        # Pilih baris data sesuai split
+        selected_idx = train_idx if split == 'train' else val_idx
+        # Simpan list file yang valid untuk split ini
+        self.file_list = df.iloc[selected_idx][['filename', 'label']].values.tolist()
         
-        for fname in selected_files:
-            label = self.label_dict[fname]
-            edf_path = os.path.join(self.data_dir, fname)
+        # --- B. LOGIKA INDEXING SLIDING WINDOW ---
+        self.samples = []
+        print(f"[{split.upper()}] Mengindeks file dengan Sliding Window (Stride={stride_sec}s)...")
+        
+        for filename, label in self.file_list:
+            file_path = os.path.join(self.data_dir, filename)
             
+            if not os.path.exists(file_path):
+                print(f"⚠️ File tidak ditemukan: {file_path}")
+                continue
+                
             try:
-                raw = mne.io.read_raw_edf(edf_path, preload=False, verbose=False)
+                raw_info = mne.io.read_raw_edf(file_path, preload=False, verbose='error')
+                duration_sec = raw_info.times[-1]
+                max_start = duration_sec - self.window_sec
                 
-                # Buat jendela 30 detik tanpa overlap
-                num_windows = (raw.n_times - self.sample_len) // self.sample_len
-                
-                for i in range(num_windows):
-                    start = i * self.sample_len
-                    self.windows.append((fname, edf_path, label, start))
-                    class_counts[label] += 1
+                if max_start > 0:
+                    starts = np.arange(0, max_start, self.stride_sec)
                     
+                    # Simpan "Alamat" potongan data ke dalam list
+                    for start in starts:
+                        self.samples.append({
+                            'file_path': file_path,
+                            'start_sec': start,
+                            'label': label
+                        })
             except Exception as e:
-                print(f"⚠️  Error loading {fname}: {e}")
-        
-        # Print distribusi kelas
-        print(f"\n📊 Class Distribution ({split}):")
-        print(f"   ├─ Alert (0): {class_counts[0]} samples")
-        print(f"   ├─ Low Vigilance (1): {class_counts[1]} samples")
-        print(f"   └─ Drowsy (2): {class_counts[2]} samples")
-        print(f"   Total: {len(self.windows)} windows\n")
+                print(f"⚠️ Error membaca header {filename}: {e}")
 
-    def _compute_subject_stats(self, files):
-        stats = {}
-        
-        for fname in files:
-            edf_path = os.path.join(self.data_dir, fname)
-            
-            try:
-                # Load seluruh data subjek
-                raw = mne.io.read_raw_edf(edf_path, preload=True, verbose=False)
-                raw.pick_channels(self.TARGET_CHANNELS, ordered=True)
-                data, _ = raw[:]  # (C, T) - All channels, all time points
-                
-                # Hitung statistik global subjek
-                stats[fname] = {
-                    'mean': float(data.mean()),
-                    'std': float(data.std())
-                }
-                
-            except Exception as e:
-                print(f"⚠️  Error computing stats for {fname}: {e}")
-                # Fallback ke nilai default
-                stats[fname] = {'mean': 0.0, 'std': 1.0}
-        
-        return stats
-
-    def _normalize_subject(self, tensor, fname):
-        mu = self.subject_stats[fname]['mean']
-        sigma = self.subject_stats[fname]['std']
-        
-        # Normalisasi dengan epsilon untuk stabilitas numerik
-        normalized = (tensor - mu) / (sigma + 1e-6)
-        
-        return normalized
+        print(f"✅ Total {split.upper()} Samples Terkumpul: {len(self.samples)}")
 
     def __len__(self):
-        return len(self.windows)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        """
-        Load dan preprocess satu window data.
+        # 1. Ambil info dari katalog
+        sample_info = self.samples[idx]
+        file_path = sample_info['file_path']
+        start_sec = sample_info['start_sec']
+        label = sample_info['label']
         
-        Pipeline:
-        1. Load raw EEG/EOG signal
-        2. Apply augmentation (hanya training)
-        3. Apply normalization
-        
-        Returns:
-            tuple: (tensor, label)
-                - tensor: (7, 15360) - 7 channels × 30 seconds @ 512Hz
-                - label: int (0, 1, atau 2)
-        """
-        fname, edf_path, label, start = self.windows[idx]
-        
-        # Load segmen data 30 detik
-        raw = mne.io.read_raw_edf(edf_path, preload=True, verbose=False)
-        raw.pick_channels(self.TARGET_CHANNELS, ordered=True)
-        
-        # Extract window
-        data, _ = raw[:, start : start + self.sample_len]
-        
-        # Convert ke PyTorch tensor
-        tensor = torch.tensor(data, dtype=torch.float32)
+        try:
+            # 2. Load File & Crop (Hanya bagian yang dibutuhkan)
+            raw = mne.io.read_raw_edf(file_path, preload=True, verbose='error')
+            
+            # 3. Seleksi Channel
+            target_channels = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
+            
+            # Fallback jika nama channel beda (case sensitive)
+            available_ch = raw.ch_names
+            raw.pick_channels(target_channels)
+            
+            # 4. Potong Sinyal (CROP)
+            t_end = start_sec + self.window_sec
+            raw.crop(tmin=start_sec, tmax=t_end, include_tmax=False)
+            
+            # 5. Ambil Data
+            signal = raw.get_data() * 1e6  
+            
+            # 6. Z-Score Normalization (PENTING untuk Deep Learning)
+            mean = np.mean(signal, axis=1, keepdims=True)
+            std = np.std(signal, axis=1, keepdims=True)
+            signal = (signal - mean) / (std + 1e-6)
+            
+            # Convert ke Tensor PyTorch
+            signal = torch.tensor(signal, dtype=torch.float32)
+            
+            # 7. Augmentasi
+            if self.use_augmentation:
+                aug = EEGAugmentation()
+                signal = aug.add_gaussian_noise(signal)
+                signal = aug.amplitude_scaling(signal)
+                # Time shift dimatikan dulu untuk sliding window agar label tetap akurat
+                # signal = aug.time_shift(signal) 
+            
+            return signal, torch.tensor(label, dtype=torch.long)
 
-        # ✅ 1. Terapkan Augmentasi (HANYA untuk training set)
-        if self.transform is not None:
-            tensor = self.transform(tensor)
+        except Exception as e:
+            # Fallback jika file corrupt/error (biar training tidak crash)
+            print(f"Error loading data idx {idx}: {e}")
+            # Return dummy zero
+            dummy_len = int(self.window_sec * Config.SAMPLE_RATE)
+            return torch.zeros((Config.IN_CHANNELS, dummy_len)), torch.tensor(0, dtype=torch.long)
 
-        # ✅ 2. Terapkan Normalisasi (WAJIB untuk semua set)
-        # Menggunakan statistik subjek yang sudah di-precompute
-        tensor = self._normalize_subject(tensor, fname)
-
-        return tensor, label
-    
-
+# ==========================================
+# 4. FUNGSI COLLATE (Pengumpul Batch)
+# ==========================================
 def collate_fn(batch):
-    signals = torch.stack([item[0] for item in batch])
-    labels = torch.tensor([item[1] for item in batch], dtype=torch.long)
-    
+    signals, labels = zip(*batch)
+    signals = torch.stack(signals)
+    labels = torch.stack(labels)
     return signals, labels
 
-
-# ✅ Test function untuk validasi dataset
-def test_dataset():
-    print("="*60)
-    print("🧪 TESTING DATASET")
-    print("="*60)
+# ==========================================
+# 5. BLOK TEST (Untuk Debugging)
+# ==========================================
+if __name__ == "__main__":
+    print("Testing DataReader...")
     
-    # Test dengan augmentasi
-    dataset_train = EEGDataset(
-        data_dir='psg',
-        csv_path='label/labels.csv',
+    stride = Config.STRIDE_SEC
+
+    # Dummy Dataset
+    dataset = EEGDataset(
+        data_dir='psg',         
+        csv_path='label/labels.csv', 
         fold=0,
         split='train',
         n_splits=5,
-        window_sec=30,
-        use_augmentation=True  # Enable augmentation
+        window_sec=Config.WINDOW_SEC,
+        stride_sec=stride,
+        use_augmentation=False
     )
     
-    # Test tanpa augmentasi
-    dataset_val = EEGDataset(
-        data_dir='psg',
-        csv_path='label/labels.csv',
-        fold=0,
-        split='val',
-        n_splits=5,
-        window_sec=30,
-        use_augmentation=False  # Disable for validation
-    )
-    
-    print(f"\n✅ Training set size: {len(dataset_train)}")
-    print(f"✅ Validation set size: {len(dataset_val)}")
-    
-    # Test loading satu sample
-    signal, label = dataset_train[0]
-    print(f"\n📊 Sample shape: {signal.shape}")
-    print(f"📊 Sample label: {label}")
-    print(f"📊 Signal range: [{signal.min():.4f}, {signal.max():.4f}]")
-    print(f"📊 Signal mean: {signal.mean():.4f}")
-    print(f"📊 Signal std: {signal.std():.4f}")
-    
-    # Test DataLoader
-    from torch.utils.data import DataLoader
-    loader = DataLoader(dataset_train, batch_size=4, shuffle=True, collate_fn=collate_fn)
-    
-    batch_signals, batch_labels = next(iter(loader))
-    print(f"\n📦 Batch signals shape: {batch_signals.shape}")
-    print(f"📦 Batch labels shape: {batch_labels.shape}")
-    print(f"📦 Batch labels: {batch_labels}")
-    
-    print("\n" + "="*60)
-    print("✅ DATASET TEST PASSED!")
-    print("="*60)
-
-
-if __name__ == "__main__":
-    test_dataset()
+    # Ambil 1 sampel
+    if len(dataset) > 0:
+        sig, lab = dataset[0]
+        print(f"Shape Signal: {sig.shape}")
+        print(f"Label: {lab}")
+    else:
+        print("Dataset kosong. Cek path file.")

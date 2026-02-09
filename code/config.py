@@ -18,6 +18,7 @@ class Config:
     NUM_CLASSES = 3      # KSS Categories: Alert, Low Vigilance, Drowsy
     WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
+    STRIDE_SEC = 10
     
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
