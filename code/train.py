@@ -274,7 +274,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     # --- 3. Persiapan Dataset & Dataloader ---
     train_dataset = EEGDataset(
         data_dir=Config.DATA_DIR,
-        csv_path=os.path.join(Config.DATA_DIR, 'label/labels.csv'),
+        csv_path=os.path.join('label/labels.csv'),
         fold=fold,
         split='train',
         n_splits=Config.N_SPLITS,
@@ -285,7 +285,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     
     val_dataset = EEGDataset(
         data_dir=Config.DATA_DIR,
-        csv_path=os.path.join(Config.DATA_DIR, 'label/labels.csv'),
+        csv_path=os.path.join('label/labels.csv'),
         fold=fold,
         split='val',
         n_splits=Config.N_SPLITS,
