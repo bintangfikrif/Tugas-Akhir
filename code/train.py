@@ -272,30 +272,26 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         )
 
     # --- 3. Persiapan Dataset & Dataloader ---
-    # ✅ TAMBAHKAN parameter augmentasi sesuai Config
     train_dataset = EEGDataset(
         data_dir=Config.DATA_DIR,
-        csv_path='label/labels.csv',
-        fold=current_fold,
+        csv_path=os.path.join(Config.DATA_DIR, 'label/labels.csv'),
+        fold=fold,
         split='train',
         n_splits=Config.N_SPLITS,
         window_sec=Config.WINDOW_SEC,
-        # ✅ Parameter augmentasi dari Config
-        use_augmentation=Config.USE_AUGMENTATION,
-        aug_gaussian_std=Config.AUG_GAUSSIAN_NOISE_STD,
-        aug_amplitude_range=Config.AUG_AMPLITUDE_SCALE_RANGE,
-        aug_time_shift_max=Config.AUG_TIME_SHIFT_MAX,
-        aug_prob=0.5  # Bisa ditambahkan ke Config juga
-    )
+        stride_sec=Config.STRIDE_SEC,   
+        use_augmentation=True
+    )           
     
     val_dataset = EEGDataset(
         data_dir=Config.DATA_DIR,
-        csv_path='label/labels.csv',
-        fold=current_fold,
+        csv_path=os.path.join(Config.DATA_DIR, 'label/labels.csv'),
+        fold=fold,
         split='val',
         n_splits=Config.N_SPLITS,
         window_sec=Config.WINDOW_SEC,
-        # Augmentasi otomatis disabled untuk validation
+        stride_sec=Config.WINDOW_SEC,   
+        use_augmentation=False          
     )
 
     train_loader = DataLoader(
