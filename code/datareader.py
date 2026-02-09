@@ -9,7 +9,7 @@ from sklearn.model_selection import GroupKFold
 from config import Config
 
 # ==========================================
-# 1. KONFIGURASI SEED (Agar Hasil Konsisten)
+# 1. KONFIGURASI SEED
 # ==========================================
 RANDOM_SEED = 2004
 random.seed(RANDOM_SEED)
@@ -38,14 +38,14 @@ class EEGAugmentation:
         return signal
     
     def amplitude_scaling(self, signal):
-        """Mengalikan sinyal dengan faktor acak (misal: 0.9x - 1.1x)"""
+        """Mengalikan sinyal dengan faktor acak"""
         if np.random.rand() < self.prob:
             scale = np.random.uniform(*self.amplitude_range)
             signal = signal * scale
         return signal
     
     def time_shift(self, signal):
-        """Menggeser sinyal ke kiri/kanan (Rolling)"""
+        """Menggeser sinyal ke kiri/kanan"""
         if np.random.rand() < self.prob:
             shift = np.random.randint(-self.time_shift_max, self.time_shift_max)
             signal = torch.roll(signal, shifts=shift, dims=1)
@@ -62,23 +62,19 @@ class EEGDataset(Dataset):
         self.use_augmentation = use_augmentation
         
         # --- A. LOGIKA SPLITTING SUBJECT-WISE ---
-        # Membaca CSV Label
         df = pd.read_csv(csv_path)
         
-        # Pastikan kolom subject_id ada untuk grouping
+        # Pastikan kolom subject_id ada
         if 'subject_id' not in df.columns:
-            # Jika tidak ada, coba extract dari filename (misal: s01_t02 -> s01)
             df['subject_id'] = df['filename'].apply(lambda x: x.split('_')[0])
 
-        # GroupKFold memastikan 1 subjek tidak bocor antara train & val
+        # GroupKFold
         gkf = GroupKFold(n_splits=n_splits)
-        # Kita butuh list indeks untuk fold tertentu
         splits = list(gkf.split(df, df['label'], groups=df['subject_id']))
         train_idx, val_idx = splits[fold]
         
         # Pilih baris data sesuai split
         selected_idx = train_idx if split == 'train' else val_idx
-        # Simpan list file yang valid untuk split ini
         self.file_list = df.iloc[selected_idx][['filename', 'label']].values.tolist()
         
         # --- B. LOGIKA INDEXING SLIDING WINDOW ---
@@ -100,7 +96,7 @@ class EEGDataset(Dataset):
                 if max_start > 0:
                     starts = np.arange(0, max_start, self.stride_sec)
                     
-                    # Simpan "Alamat" potongan data ke dalam list
+                    # Simpan "Alamat" potongan data
                     for start in starts:
                         self.samples.append({
                             'file_path': file_path,
@@ -120,27 +116,35 @@ class EEGDataset(Dataset):
         sample_info = self.samples[idx]
         file_path = sample_info['file_path']
         start_sec = sample_info['start_sec']
-        label = sample_info['label']
+        raw_label = sample_info['label']
+        
+        # --- [FIX] KONVERSI KSS (1-9) KE KELAS (0-2) ---
+        if raw_label <= 3:
+            label = 0   # Alert
+        elif raw_label <= 6:
+            label = 1   # Low Vigilance
+        else:
+            label = 2   # Drowsy
+        # -----------------------------------------------
         
         try:
-            # 2. Load File & Crop (Hanya bagian yang dibutuhkan)
+            # 2. Load File & Crop
             raw = mne.io.read_raw_edf(file_path, preload=True, verbose='error')
             
             # 3. Seleksi Channel
             target_channels = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
             
-            # Fallback jika nama channel beda (case sensitive)
-            available_ch = raw.ch_names
+            # Fallback jika nama channel beda
             raw.pick_channels(target_channels)
             
             # 4. Potong Sinyal (CROP)
             t_end = start_sec + self.window_sec
             raw.crop(tmin=start_sec, tmax=t_end, include_tmax=False)
             
-            # 5. Ambil Data
+            # 5. Ambil Data (Microvolts)
             signal = raw.get_data() * 1e6  
             
-            # 6. Z-Score Normalization (PENTING untuk Deep Learning)
+            # 6. Z-Score Normalization
             mean = np.mean(signal, axis=1, keepdims=True)
             std = np.std(signal, axis=1, keepdims=True)
             signal = (signal - mean) / (std + 1e-6)
@@ -153,20 +157,18 @@ class EEGDataset(Dataset):
                 aug = EEGAugmentation()
                 signal = aug.add_gaussian_noise(signal)
                 signal = aug.amplitude_scaling(signal)
-                # Time shift dimatikan dulu untuk sliding window agar label tetap akurat
-                # signal = aug.time_shift(signal) 
+                # Time shift optional
             
             return signal, torch.tensor(label, dtype=torch.long)
 
         except Exception as e:
-            # Fallback jika file corrupt/error (biar training tidak crash)
+            # Fallback jika file corrupt
             print(f"Error loading data idx {idx}: {e}")
-            # Return dummy zero
             dummy_len = int(self.window_sec * Config.SAMPLE_RATE)
             return torch.zeros((Config.IN_CHANNELS, dummy_len)), torch.tensor(0, dtype=torch.long)
 
 # ==========================================
-# 4. FUNGSI COLLATE (Pengumpul Batch)
+# 4. FUNGSI COLLATE
 # ==========================================
 def collate_fn(batch):
     signals, labels = zip(*batch)
@@ -175,14 +177,11 @@ def collate_fn(batch):
     return signals, labels
 
 # ==========================================
-# 5. BLOK TEST (Untuk Debugging)
+# 5. BLOK TEST
 # ==========================================
 if __name__ == "__main__":
     print("Testing DataReader...")
     
-    stride = Config.STRIDE_SEC
-
-    # Dummy Dataset
     dataset = EEGDataset(
         data_dir='psg',         
         csv_path='label/labels.csv', 
@@ -190,11 +189,10 @@ if __name__ == "__main__":
         split='train',
         n_splits=5,
         window_sec=Config.WINDOW_SEC,
-        stride_sec=stride,
+        stride_sec=Config.STRIDE_SEC,
         use_augmentation=False
     )
     
-    # Ambil 1 sampel
     if len(dataset) > 0:
         sig, lab = dataset[0]
         print(f"Shape Signal: {sig.shape}")
