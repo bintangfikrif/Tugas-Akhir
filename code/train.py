@@ -313,7 +313,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     )
 
     # --- 4. Penanganan Ketidakseimbangan Data ---
-    train_labels = [item[2] for item in train_dataset.windows]  # ✅ Index 2 karena format baru (fname, path, label, start)
+    train_labels = [item['label'] for item in train_dataset.samples]
     class_weights = compute_inverse_weight(train_labels, num_classes=Config.NUM_CLASSES).to(device)
     print(f"\nBobot Kelas (Fold {current_fold}): {class_weights}")
 
