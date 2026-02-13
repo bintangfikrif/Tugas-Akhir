@@ -11,7 +11,7 @@ from thop import profile, clever_format
 from sklearn.metrics import confusion_matrix
 
 # Mengimpor modul kustom yang telah disesuaikan dengan proposal
-from datareader import EEGDataset, collate_fn
+from datareader import EEGDataset, collate_fn, UniqueRecordingBatchSampler
 from models import MambaDrowsinessDetector
 from losses import WeightedCrossEntropyLoss, compute_inverse_weight, get_evaluation_metrics
 from config import Config
@@ -279,7 +279,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         split='train',
         n_splits=Config.N_SPLITS,
         window_sec=Config.WINDOW_SEC,
-        stride_sec=Config.STRIDE_SEC,   
+        stride_sec=Config.WINDOW_SEC,   
         use_augmentation=True
     )           
     
@@ -294,10 +294,11 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         use_augmentation=False          
     )
 
+    custom_sampler = UniqueRecordingBatchSampler(train_dataset, Config.BATCH_SIZE)
+
     train_loader = DataLoader(
         train_dataset,
-        batch_size=Config.BATCH_SIZE,
-        shuffle=True,
+        batch_sampler=custom_sampler,
         collate_fn=collate_fn,
         num_workers=Config.NUM_WORKERS,
         pin_memory=True if device.type == 'cuda' else False
@@ -570,7 +571,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             logits = model(signals)
             preds = torch.argmax(logits, dim=1)
             final_val_preds.append(preds.cpu())
-            final_val_targets.append(labels)
+            final_val_targets.append(labels.cpu())
     
     final_val_preds = torch.cat(final_val_preds)
     final_val_targets = torch.cat(final_val_targets)
