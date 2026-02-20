@@ -11,7 +11,7 @@ from thop import profile, clever_format
 from sklearn.metrics import confusion_matrix
 
 # Mengimpor modul kustom yang telah disesuaikan dengan proposal
-from datareader import EEGDataset, collate_fn, UniqueRecordingBatchSampler
+from datareader import EEGDataset, collate_fn, OneSamplePerRecordingSampler
 from models import MambaDrowsinessDetector
 from losses import WeightedCrossEntropyLoss, compute_inverse_weight, get_evaluation_metrics
 from config import Config
@@ -235,7 +235,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     batch_size = Config.BATCH_SIZE
     epochs = Config.EPOCHS
     lr = Config.LEARNING_RATE
-    current_fold = fold  # ✅ Gunakan parameter fold
+    current_fold = fold  # 
     
     # Konfigurasi Confusion Matrix
     cm_save_interval = 5
@@ -266,7 +266,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Mamba_Fold_{current_fold}_UniqueBatchSampler",
+            name=f"Mamba_Fold_{current_fold}_OneSamplePerRecording",
             config=clean_config,  
             reinit=True  
         )
@@ -294,7 +294,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         use_augmentation=False          
     )
 
-    custom_sampler = UniqueRecordingBatchSampler(train_dataset, Config.BATCH_SIZE)
+    custom_sampler = OneSamplePerRecordingSampler(train_dataset, Config.BATCH_SIZE)
 
     train_loader = DataLoader(
         train_dataset,
@@ -357,7 +357,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     
     criterion = WeightedCrossEntropyLoss(weight=class_weights)
     
-    # ✅ TAMBAHKAN Learning Rate Scheduler (sesuai Config)
+    # TAMBAHKAN Learning Rate Scheduler 
     scheduler = None
     if Config.USE_SCHEDULER:
         from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -373,10 +373,10 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     # --- 7. Loop Pelatihan ---
     best_val_acc = 0
     best_val_f1 = 0
-    patience_counter = 0  # ✅ Untuk early stopping
+    patience_counter = 0  # Untuk early stopping
     
     print("\n" + "="*60)
-    print("🚀 MEMULAI PELATIHAN")
+    print("MEMULAI PELATIHAN")
     print("="*60 + "\n")
     
     for epoch in range(Config.EPOCHS):
@@ -446,7 +446,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         train_f1_macro = np.mean([train_metrics[f'class_{i}']['f1'].item() for i in range(Config.NUM_CLASSES)])
         val_f1_macro = np.mean([val_metrics[f'class_{i}']['f1'].item() for i in range(Config.NUM_CLASSES)])
 
-        # ✅ Learning Rate Scheduler Step
+        # Learning Rate Scheduler Step
         if scheduler is not None:
             scheduler.step(val_acc)
             current_lr = optimizer.param_groups[0]['lr']
@@ -536,7 +536,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         else:
             patience_counter += 1  # ✅ Increment counter
         
-        # ✅ Early Stopping Check
+        # Early Stopping Check
         if patience_counter >= Config.EARLY_STOPPING_PATIENCE:
             print(f"\n⚠️  Early stopping triggered at epoch {epoch+1}")
             print(f"   No improvement for {Config.EARLY_STOPPING_PATIENCE} epochs")
@@ -592,33 +592,33 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
 if __name__ == "__main__":
     # Train single fold
-    # train(fold=0)
+    train(fold=0)
     
     # Fll 5-fold CV
-    results = []
-    for fold in range(Config.N_SPLITS):
-        print(f"\n{'='*70}")
-        print(f"📂 STARTING FOLD {fold + 1}/{Config.N_SPLITS}")
-        print(f"{'='*70}\n")
+    # results = []
+    # for fold in range(Config.N_SPLITS):
+    #     print(f"\n{'='*70}")
+    #     print(f"📂 STARTING FOLD {fold + 1}/{Config.N_SPLITS}")
+    #     print(f"{'='*70}\n")
         
-        acc, f1 = train(fold=fold)
-        results.append({'fold': fold, 'accuracy': acc, 'f1': f1})
+    #     acc, f1 = train(fold=fold)
+    #     results.append({'fold': fold, 'accuracy': acc, 'f1': f1})
         
-        print(f"\n✅ Fold {fold + 1} completed: Acc={acc:.4f}, F1={f1:.4f}\n")
+    #     print(f"\n✅ Fold {fold + 1} completed: Acc={acc:.4f}, F1={f1:.4f}\n")
     
-    # Ringkasan hasil
-    print("\n" + "="*70)
-    print("📊 5-FOLD CROSS VALIDATION RESULTS")
-    print("="*70)
-    for r in results:
-        print(f"Fold {r['fold']+1}: Acc={r['accuracy']:.4f}, F1={r['f1']:.4f}")
+    # # Ringkasan hasil
+    # print("\n" + "="*70)
+    # print("📊 5-FOLD CROSS VALIDATION RESULTS")
+    # print("="*70)
+    # for r in results:
+    #     print(f"Fold {r['fold']+1}: Acc={r['accuracy']:.4f}, F1={r['f1']:.4f}")
     
-    mean_acc = np.mean([r['accuracy'] for r in results])
-    std_acc = np.std([r['accuracy'] for r in results])
-    mean_f1 = np.mean([r['f1'] for r in results])
-    std_f1 = np.std([r['f1'] for r in results])
+    # mean_acc = np.mean([r['accuracy'] for r in results])
+    # std_acc = np.std([r['accuracy'] for r in results])
+    # mean_f1 = np.mean([r['f1'] for r in results])
+    # std_f1 = np.std([r['f1'] for r in results])
     
-    print("-"*70)
-    print(f"Mean Accuracy: {mean_acc:.4f} ± {std_acc:.4f}")
-    print(f"Mean F1-Score: {mean_f1:.4f} ± {std_f1:.4f}")
-    print("="*70)
+    # print("-"*70)
+    # print(f"Mean Accuracy: {mean_acc:.4f} ± {std_acc:.4f}")
+    # print(f"Mean F1-Score: {mean_f1:.4f} ± {std_f1:.4f}")
+    # print("="*70)

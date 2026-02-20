@@ -134,8 +134,8 @@ class EEGDataset(Dataset):
             dummy_len = int(self.window_sec * Config.SAMPLE_RATE)
             return torch.zeros((Config.IN_CHANNELS, dummy_len)), torch.tensor(0, dtype=torch.long)
 
-class UniqueRecordingBatchSampler(Sampler):
-    """Sampler untuk memastikan setiap batch berisi data dari rekaman yang berbeda"""
+class OneSamplePerRecordingSampler(Sampler):
+    """Sampler: 1 Epoch hanya mengambil 1 potongan acak dari tiap rekaman"""
     def __init__(self, dataset, batch_size):
         self.dataset = dataset
         self.batch_size = batch_size
@@ -146,34 +146,25 @@ class UniqueRecordingBatchSampler(Sampler):
             self.file_to_indices[sample['file_path']].append(idx)
             
         self.unique_files = list(self.file_to_indices.keys())
-        
-        # Penyesuaian jika batch size lebih besar dari jumlah rekaman
-        if len(self.unique_files) < self.batch_size:
-            print(f"Warning: Rekaman unik ({len(self.unique_files)}) < Batch Size ({self.batch_size}). Menyesuaikan batch size.")
-            self.batch_size = len(self.unique_files)
 
     def __iter__(self):
-        # Acak urutan potongan di dalam tiap file
-        working_indices = {}
+        # 1. Pilih tepat SATU indeks acak dari masing-masing file untuk epoch ini
+        epoch_indices = []
         for file_path in self.unique_files:
-            indices = self.file_to_indices[file_path].copy()
-            np.random.shuffle(indices)
-            working_indices[file_path] = indices
+            # Ambil 1 potongan acak
+            idx = random.choice(self.file_to_indices[file_path])
+            epoch_indices.append(idx)
             
-        available_files = list(self.unique_files)
+        # 2. Kocok urutan file yang sudah dipilih
+        random.shuffle(epoch_indices)
         
-        # Buat batch dengan mengambil 1 sampel dari tiap file yang terpilih
-        while len(available_files) >= self.batch_size:
-            selected_files = random.sample(available_files, self.batch_size)
-            batch = []
-            for f in selected_files:
-                batch.append(working_indices[f].pop())
-                if len(working_indices[f]) == 0:
-                    available_files.remove(f)
-            yield batch
+        # 3. Potong-potong menjadi batch
+        for i in range(0, len(epoch_indices), self.batch_size):
+            yield epoch_indices[i:i + self.batch_size]
 
     def __len__(self):
-        return len(self.dataset) // self.batch_size
+        # Hitung jumlah batch per epoch
+        return (len(self.unique_files) + self.batch_size - 1) // self.batch_size
 
 def collate_fn(batch):
     signals, labels = zip(*batch)
