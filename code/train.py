@@ -355,7 +355,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         weight_decay=Config.WEIGHT_DECAY
     )
     
-    criterion = WeightedCrossEntropyLoss(weight=None)
+    criterion = WeightedCrossEntropyLoss(weight=None, label_smoothing=0.15)
     
     # TAMBAHKAN Learning Rate Scheduler 
     scheduler = None
