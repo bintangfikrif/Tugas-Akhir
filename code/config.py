@@ -7,8 +7,8 @@ class Config:
     MODEL_NAME = "mamba" 
     
     # Mamba specific parameters
-    MAMBA_D_MODEL = 128  # Hidden dimension
-    MAMBA_N_LAYERS = 4   # Number of Mamba layers
+    MAMBA_D_MODEL = 32  # Hidden dimension
+    MAMBA_N_LAYERS = 2   # Number of Mamba layers
     MAMBA_D_STATE = 16   # SSM state expansion factor
     MAMBA_D_CONV = 4     # Local convolution width
     MAMBA_EXPAND = 2     # Block expansion factor
@@ -32,7 +32,7 @@ class Config:
     SCHEDULER_FACTOR = 0.5
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 30
+    EARLY_STOPPING_PATIENCE = 40
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation
