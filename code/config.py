@@ -18,21 +18,21 @@ class Config:
     NUM_CLASSES = 3      # KSS Categories: Alert, Low Vigilance, Drowsy
     WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
-    # STRIDE_SEC = 10
+    STRIDE_SEC = 5
     
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
-    EPOCHS = 200
+    EPOCHS = 50
     LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 1e-4
     
     # Learning rate scheduler
     USE_SCHEDULER = True
-    SCHEDULER_PATIENCE = 15
+    SCHEDULER_PATIENCE = 5
     SCHEDULER_FACTOR = 0.5
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 40
+    EARLY_STOPPING_PATIENCE = 15
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation
