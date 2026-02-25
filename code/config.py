@@ -28,11 +28,11 @@ class Config:
     
     # Learning rate scheduler
     USE_SCHEDULER = True
-    SCHEDULER_PATIENCE = 5
+    SCHEDULER_PATIENCE = 3
     SCHEDULER_FACTOR = 0.5
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 15
+    EARLY_STOPPING_PATIENCE = 10
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation
