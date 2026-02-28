@@ -266,7 +266,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Mamba_Fold_{current_fold}_EndAnchor_SlidingWindow",
+            name=f"Mamba_Fold_{current_fold}_EndAnchor_SlidingWindow_classWeights",
             config=clean_config,  
             reinit=True  
         )
@@ -355,7 +355,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         weight_decay=Config.WEIGHT_DECAY
     )
     
-    criterion = torch.nn.CrossEntropyLoss(weight=None, label_smoothing=0.15)
+    criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
     
     # TAMBAHKAN Learning Rate Scheduler 
     scheduler = None
