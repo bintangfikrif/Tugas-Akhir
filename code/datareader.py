@@ -141,12 +141,17 @@ class EEGDataset(Dataset):
                         if not window_events:
                             keep = True
                         else:
+                            # Hitung rata-rata waktu reaksi (Average RT)
+                            avg_rt = sum(window_events) / len(window_events)
+                            # Hitung jumlah microsleep (Lapse)
                             lapses = sum(1 for rt in window_events if rt > 500.0)
                             
                             if label <= 3:      
-                                keep = (lapses == 0)
+                                keep = (lapses == 0) and (avg_rt < 350.0)
+                            
                             elif label >= 7:    
-                                keep = (lapses >= 1)
+                                keep = (lapses >= 1) or (avg_rt >= 350.0)
+                            
                             else:               
                                 keep = True
                                 
@@ -250,7 +255,7 @@ def collate_fn(batch):
 if __name__ == "__main__":
     print("Testing DataReader Hibrida (KSS + Filter PVT)...")
     
-    print("\n--- MENGUJI DATA TRAINING ---")
+    print("\n--- MENGUJI DATA TRAINING (FOLD 0) ---")
     train_dataset = EEGDataset(
         data_dir='psg',        
         csv_path='label/labels.csv', 
@@ -258,10 +263,34 @@ if __name__ == "__main__":
         split='train',
         n_splits=5,
         window_sec=Config.WINDOW_SEC,
-        stride_sec=Config.WINDOW_SEC, 
+        stride_sec=5, # Stride 5 detik untuk perbanyak data training
         use_augmentation=False
     )
     
+    print("\n" + "="*40)
+    print(f"TOTAL DATA BERSIH (TRAIN) : {len(train_dataset)} jendela")
+    print("="*40)
+    
+    # Menghitung distribusi label secara manual
+    label_counts = {0: 0, 1: 0, 2: 0}
+    for sample in train_dataset.samples:
+        raw_label = sample['label']
+        if raw_label <= 3: 
+            label_counts[0] += 1
+        elif raw_label <= 6: 
+            label_counts[1] += 1
+        else: 
+            label_counts[2] += 1
+            
+    print("DISTRIBUSI LABEL:")
+    print(f"Alert (0)         : {label_counts[0]} sampel")
+    print(f"Low Vigilance (1) : {label_counts[1]} sampel")
+    print(f"Drowsy (2)        : {label_counts[2]} sampel")
+    print("="*40)
+    
+    # Cek shape tensor jika data tidak kosong
     if len(train_dataset) > 0:
+        print("\nMemuat 1 sampel data untuk cek dimensi...")
         sig, lab = train_dataset[0]
-        print(f"Shape Signal Train: {sig.shape} | Label Train: {lab}")
+        print(f"Shape Signal Train : {sig.shape}")
+        print(f"Contoh Label       : {lab}")
