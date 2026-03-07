@@ -89,7 +89,8 @@ class EEGDataset(Dataset):
         self.data_dir = data_dir
         self.window_sec = window_sec
         self.use_augmentation = use_augmentation
-        self.stride_sec = 5 if split == 'train' else window_sec
+        # FIX: Gunakan stride_sec yang diberikan, jangan di-override
+        self.stride_sec = stride_sec
         
         df = pd.read_csv(csv_path)
         if 'subject_id' not in df.columns:

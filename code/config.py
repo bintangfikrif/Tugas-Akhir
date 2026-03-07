@@ -7,7 +7,7 @@ class Config:
     MODEL_NAME = "mamba" 
     
     # Mamba specific parameters
-    MAMBA_D_MODEL = 32  # Hidden dimension
+    MAMBA_D_MODEL = 64  # Hidden dimension
     MAMBA_N_LAYERS = 4   # Number of Mamba layers
     MAMBA_D_STATE = 16   # SSM state expansion factor
     MAMBA_D_CONV = 4     # Local convolution width
@@ -18,11 +18,11 @@ class Config:
     NUM_CLASSES = 3      # KSS Categories: Alert, Low Vigilance, Drowsy
     WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
-    STRIDE_SEC = 5
+    STRIDE_SEC = 10
     
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
-    EPOCHS = 50
+    EPOCHS = 25
     LEARNING_RATE = 1e-4
     WEIGHT_DECAY = 1e-3
     
