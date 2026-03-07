@@ -7,7 +7,7 @@ class Config:
     MODEL_NAME = "mamba" 
     
     # Mamba specific parameters
-    MAMBA_D_MODEL = 64  # Hidden dimension
+    MAMBA_D_MODEL = 64   # Naikkan kapasitas (dari 32)
     MAMBA_N_LAYERS = 4   # Number of Mamba layers
     MAMBA_D_STATE = 16   # SSM state expansion factor
     MAMBA_D_CONV = 4     # Local convolution width
@@ -18,21 +18,21 @@ class Config:
     NUM_CLASSES = 3      # KSS Categories: Alert, Low Vigilance, Drowsy
     WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
-    STRIDE_SEC = 10
+    STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
     
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
     EPOCHS = 25
-    LEARNING_RATE = 1e-4
-    WEIGHT_DECAY = 1e-3
+    LEARNING_RATE = 5e-4  # Naikkan dari 1e-4: model perlu sinyal gradient lebih kuat
+    WEIGHT_DECAY = 1e-4   # Turunkan dari 1e-3: jangan terlalu restrict model kecil
     
     # Learning rate scheduler
     USE_SCHEDULER = True
-    SCHEDULER_PATIENCE = 3
+    SCHEDULER_PATIENCE = 5   # Naikkan dari 3: beri waktu lebih sebelum reduce LR
     SCHEDULER_FACTOR = 0.5
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 10
+    EARLY_STOPPING_PATIENCE = 15  # Naikkan dari 10
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation

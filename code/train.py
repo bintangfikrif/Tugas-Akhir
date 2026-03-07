@@ -266,7 +266,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Mamba_Fold_{current_fold}_Hybrid_PVT_Filter_new_label",
+            name=f"Mamba_Fold_{current_fold}_ModelNew",
             config=clean_config,  
             reinit=True  
         )
@@ -294,8 +294,8 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         use_augmentation=False          
     )
 
-    # FIX: Gunakan standard DataLoader - UniqueRecordingBatchSampler terlalu membatasi
-    # jumlah gradient updates per epoch
+    # FIX: Gunakan standard DataLoader — UniqueRecordingBatchSampler
+    # terlalu membatasi jumlah gradient updates per epoch
     train_loader = DataLoader(
         train_dataset,
         batch_size=Config.BATCH_SIZE,
@@ -303,7 +303,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         collate_fn=collate_fn,
         num_workers=Config.NUM_WORKERS,
         pin_memory=True if device.type == 'cuda' else False,
-        drop_last=True  # Hindari batch terakhir yang terlalu kecil
+        drop_last=True
     )
     
     val_loader = DataLoader(
@@ -363,7 +363,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         weight_decay=Config.WEIGHT_DECAY
     )
     
-    # FIX: Hapus label_smoothing - kontraproduktif untuk dataset kecil dengan kelas ambigu
+    # FIX: Hapus label_smoothing — kontraproduktif untuk dataset kecil
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
     
     # TAMBAHKAN Learning Rate Scheduler 
@@ -405,7 +405,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             logits = model(signals)
             loss = criterion(logits, labels)
             loss.backward()
-            # FIX: Gradient clipping untuk stabilisasi training
+            # Gradient clipping: cegah exploding gradient
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             

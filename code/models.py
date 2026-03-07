@@ -45,16 +45,29 @@ class MambaDrowsinessDetector(nn.Module):
     ):
         super(MambaDrowsinessDetector, self).__init__()
         
-        # 1. Proyeksi Input: Menggunakan Conv1D untuk ekstraksi fitur temporal lokal 
+        # 1. Temporal Encoder: Ekstraksi fitur + Downsampling bertahap
+        # Masalah sebelumnya: kernel_size=7 (0.014 detik) terlalu kecil untuk EEG
+        # dan sequence 15360 timesteps langsung masuk Mamba -> gradient vanishing
+        #
+        # Solusi: 2-stage strided conv untuk downsample 32x
+        #   Stage 1: 15360 -> 1920 (stride=8, kernel=16 = 31ms, cukup untuk 1 siklus alpha)
+        #   Stage 2: 1920  -> 480  (stride=4, kernel=8)
+        # Hasil: 480 token masuk Mamba, jauh lebih mudah dioptimasi
+        half_d = d_model // 2
         self.input_projection = nn.Sequential(
-            nn.Conv1d(in_channels, d_model, kernel_size=7, padding=3, bias=False),
+            # Stage 1: Tangkap fitur lokal EEG (alpha/theta butuh kernel >= 16 samples)
+            nn.Conv1d(in_channels, half_d, kernel_size=16, stride=8, padding=4, bias=False),
+            nn.BatchNorm1d(half_d),
+            nn.GELU(),
+            # Stage 2: Lanjutkan downsampling, perluas ke d_model
+            nn.Conv1d(half_d, d_model, kernel_size=8, stride=4, padding=2, bias=False),
             nn.BatchNorm1d(d_model),
             nn.GELU(),
         )
         
-        # 2. Learnable Positional Embedding 
-        # Max seq len untuk 30 detik pada 512Hz adalah 15360
-        self.max_seq_len = 16000 
+        # 2. Learnable Positional Embedding
+        # Setelah downsampling 32x: 15360/32 = 480 timesteps
+        self.max_seq_len = 512  # Sedikit lebih dari 480 untuk buffer
         self.pos_encoding = nn.Parameter(
             torch.randn(1, self.max_seq_len, d_model) * 0.02
         )

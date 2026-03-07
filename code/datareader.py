@@ -4,7 +4,6 @@ import torch
 import pandas as pd
 import mne
 import random
-from datetime import datetime, timedelta
 from torch.utils.data import Dataset, DataLoader, Sampler
 from collections import defaultdict
 from sklearn.model_selection import GroupKFold
@@ -16,47 +15,6 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
-def parse_pvt_file(csv_path):
-    """Membaca file PVT dan mengembalikan list of tuples: (stimulus_time_sec, reaction_time_ms)"""
-    events = []
-    with open(csv_path, 'r') as f:
-        lines = f.readlines()
-        
-    if not lines:
-        return events
-
-    # Format datetime universal untuk file ini: Tahun-Bulan-Tanggal_Jam.Menit.Detik.Milidetik
-    time_format = "%Y-%m-%d_%H.%M.%S.%f"
-
-    # Baca waktu mulai (Baris 1)
-    base_time_str = lines[0].strip()
-    try:
-        base_time = datetime.strptime(base_time_str, time_format)
-    except ValueError:
-        return events # Skip jika format header salah
-
-    # Baca kejadian stimulus & respons (Baris 2 dst)
-    for line in lines[1:]:
-        line = line.strip()
-        if not line: continue
-        
-        parts = line.split(';')
-        if len(parts) == 2:
-            stim_str, resp_str = parts
-            
-            try:
-                stim_dt = datetime.strptime(stim_str, time_format)
-                resp_dt = datetime.strptime(resp_str, time_format)
-                
-                # Hitung selisih waktu
-                stim_sec = (stim_dt - base_time).total_seconds()
-                rt_ms = (resp_dt - stim_dt).total_seconds() * 1000.0
-                
-                events.append((stim_sec, rt_ms))
-            except ValueError:
-                continue
-                
-    return events
 
 # Augmentasi EEG
 class EEGAugmentation:
@@ -89,12 +47,13 @@ class EEGDataset(Dataset):
         self.data_dir = data_dir
         self.window_sec = window_sec
         self.use_augmentation = use_augmentation
-        # FIX: Gunakan stride_sec yang diberikan, jangan di-override
+        # FIX: Gunakan stride_sec yang dikirim, jangan di-override hardcoded
         self.stride_sec = stride_sec
         
         df = pd.read_csv(csv_path)
         if 'subject_id' not in df.columns:
-            df['subject_id'] = df['filename'].apply(lambda x: x.split('_')[0])
+            # DROZY format: "1-1.edf" -> subject_id = "1"
+            df['subject_id'] = df['filename'].apply(lambda x: x.split('-')[0])
 
         # Gunakan GroupKFold untuk memastikan rekaman dari subjek
         gkf = GroupKFold(n_splits=n_splits)
@@ -105,69 +64,65 @@ class EEGDataset(Dataset):
         self.file_list = df.iloc[selected_idx][['filename', 'label']].values.tolist()
         
         self.samples = []
-        
-        # Tracking statistik filter
         total_windows = 0
-        kept_windows = 0
-        
-        print(f"[{split.upper()}] Menyaring Data PVT & Mengindeks File (Stride={self.stride_sec}s)...")
-        
-        # Iterasi setiap file untuk menentukan jendela mana yang akan diambil berdasarkan aturan PVT
+
+        print(f"[{split.upper()}] Mengindeks File (Window={self.window_sec}s, Stride={self.stride_sec}s)...")
+
+        # Skenario windowing bersih tanpa filter PVT:
+        # Alasan menghapus filter PVT:
+        # 1. KSS dicatat SEBELUM sesi dimulai — memfilter berdasarkan hasil PVT
+        #    menciptakan bias seleksi yang bertentangan dengan label
+        # 2. Window tanpa stimulus PVT (mayoritas) selalu lolos filter -> tidak konsisten
+        # 3. Dependency pada pvt-rt/*.csv menyebabkan rekaman di-skip diam-diam
+        #
+        # Skenario pengganti: ambil seluruh rekaman dengan sliding window,
+        # buang hanya 30 detik PERTAMA (stabilisasi awal subjek)
+        SKIP_FIRST_SEC = 30  # Buang 30 detik pertama tiap rekaman
+
         for filename, label in self.file_list:
-            file_path = os.path.join(self.data_dir, filename)
-            pvt_filename = filename.replace('.edf', '.csv')
-            pvt_path = os.path.join('pvt-rt', pvt_filename)
-            
-            if not os.path.exists(file_path) or not os.path.exists(pvt_path):
+            # Skip rekaman dengan KSS=0 (tidak valid, hanya ada di 7-1.edf)
+            if label == 0:
+                print(f"  [SKIP] {filename}: KSS=0 tidak valid")
                 continue
-                
+
+            file_path = os.path.join(self.data_dir, filename)
+            if not os.path.exists(file_path):
+                print(f"  [SKIP] {filename}: file tidak ditemukan")
+                continue
+
             try:
-                # Parse data PVT
-                pvt_events = parse_pvt_file(pvt_path)
-                
                 raw_info = mne.io.read_raw_edf(file_path, preload=False, verbose='error')
                 duration_sec = raw_info.times[-1]
-                max_start = duration_sec - self.window_sec
-                
-                if max_start > 0:
-                    starts = np.arange(0, max_start, self.stride_sec)
-                    for start in starts:
-                        end = start + self.window_sec
-                        total_windows += 1
-                        
-                        # Ambil kejadian PVT di dalam jendela 30 detik ini
-                        window_events = [rt_ms for (stim_sec, rt_ms) in pvt_events if start <= stim_sec < end]
-                        
-                        keep = False
-                        if not window_events:
-                            keep = True
-                        else:
-                            # Hitung rata-rata waktu reaksi (Average RT)
-                            avg_rt = sum(window_events) / len(window_events)
-                            # Hitung jumlah microsleep (Lapse)
-                            lapses = sum(1 for rt in window_events if rt > 500.0)
-                            
-                            if label <= 3:      
-                                keep = (lapses == 0) and (avg_rt < 350.0)
-                            
-                            elif label >= 7:    
-                                keep = (lapses >= 1) or (avg_rt >= 350.0)
-                            
-                            else:               
-                                keep = True
-                                
-                        if keep:
-                            self.samples.append({
-                                'file_path': file_path,
-                                'start_sec': start,
-                                'label': label
-                            })
-                            kept_windows += 1
-                            
-            except Exception as e:
-                pass
 
-        print(f"Total Jendela Terbentuk: {total_windows} | Jendela Bersih (Diambil): {kept_windows} | Dibuang: {total_windows - kept_windows}")
+                # Mulai dari detik ke-30 (lewati stabilisasi awal)
+                # Akhiri sehingga window terakhir tidak melebihi durasi
+                effective_start = SKIP_FIRST_SEC
+                max_start = duration_sec - self.window_sec
+
+                if max_start <= effective_start:
+                    print(f"  [SKIP] {filename}: rekaman terlalu pendek ({duration_sec:.1f}s)")
+                    continue
+
+                starts = np.arange(effective_start, max_start, self.stride_sec)
+                for start in starts:
+                    self.samples.append({
+                        'file_path': file_path,
+                        'start_sec': float(start),
+                        'label': label
+                    })
+                    total_windows += 1
+
+            except Exception as e:
+                print(f"  [ERROR] {filename}: {e}")
+
+        # Hitung distribusi kelas hasil windowing
+        from collections import Counter
+        def kss_to_class(k):
+            if k <= 3: return 'Alert'
+            elif k <= 6: return 'Low Vigilance'
+            else: return 'Drowsy'
+        dist = Counter(kss_to_class(s['label']) for s in self.samples)
+        print(f"Total Window: {total_windows} | Distribusi: {dict(dist)}")
 
     def __len__(self):
         return len(self.samples)
