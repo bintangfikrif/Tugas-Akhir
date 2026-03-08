@@ -23,8 +23,8 @@ class Config:
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
     EPOCHS = 15
-    LEARNING_RATE = 1e-3  
-    WEIGHT_DECAY = 1e-4
+    LEARNING_RATE = 1e-4  
+    WEIGHT_DECAY = 1e-3
     
     # Learning rate scheduler
     USE_SCHEDULER = True
@@ -43,7 +43,7 @@ class Config:
     ORDINAL_IMPORTANCE = 1.0  # Weight for ordinal loss
     
     # ==================== Data Augmentation ====================
-    USE_BANDPASS_FILTER = True
+    USE_BANDPASS_FILTER = False
     USE_AUGMENTATION = True
     AUG_GAUSSIAN_NOISE_STD = 0.01
     AUG_AMPLITUDE_SCALE_RANGE = (0.9, 1.1)
