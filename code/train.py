@@ -11,7 +11,7 @@ from thop import profile, clever_format
 from sklearn.metrics import confusion_matrix
 
 # Mengimpor modul kustom yang telah disesuaikan dengan proposal
-from datareader import EEGDataset, collate_fn, UniqueRecordingBatchSampler
+from datareader import EEGDataset, collate_fn, UniqueRecordingBatchSampler, kss_to_class
 from models import MambaDrowsinessDetector
 from losses import WeightedCrossEntropyLoss, compute_inverse_weight, get_evaluation_metrics
 from config import Config
@@ -76,8 +76,11 @@ def plot_confusion_matrix(y_true, y_pred, epoch, fold, phase='val', save_dir='co
     # Hitung confusion matrix
     cm = confusion_matrix(y_true, y_pred)
     
-    # Class names sesuai proposal (hal. 32)
-    class_names = ['Alert', 'Low Vigilance', 'Drowsy']
+    # Class names otomatis dari Config.NUM_CLASSES
+    if Config.NUM_CLASSES == 2:
+        class_names = ['Alert', 'Drowsy']
+    else:
+        class_names = ['Alert', 'Low Vigilance', 'Drowsy']
     
     # Buat figure dengan ukuran yang sesuai
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -140,7 +143,9 @@ def plot_confusion_matrix(y_true, y_pred, epoch, fold, phase='val', save_dir='co
     
     return cm
 
-def compute_per_class_metrics(cm, class_names=['Alert', 'Low Vigilance', 'Drowsy']):
+def compute_per_class_metrics(cm, class_names=None):
+    if class_names is None:
+        class_names = ['Alert', 'Drowsy'] if Config.NUM_CLASSES == 2 else ['Alert', 'Low Vigilance', 'Drowsy']
     metrics = {}
     
     for i, class_name in enumerate(class_names):
@@ -173,10 +178,12 @@ def compute_per_class_metrics(cm, class_names=['Alert', 'Low Vigilance', 'Drowsy
     
     return metrics
 
-def print_classification_report(cm, class_names=['Alert', 'Low Vigilance', 'Drowsy']):
+def print_classification_report(cm, class_names=None):
     """
     Print detailed classification report dari confusion matrix.
     """
+    if class_names is None:
+        class_names = ['Alert', 'Drowsy'] if Config.NUM_CLASSES == 2 else ['Alert', 'Low Vigilance', 'Drowsy']
     metrics = compute_per_class_metrics(cm, class_names)
     
     print("\n" + "="*70)
@@ -266,7 +273,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Mamba_Fold_{current_fold}_ModelNew",
+            name=f"Mamba_Fold_{current_fold}_Try_2_classes",
             config=clean_config,  
             reinit=True  
         )
@@ -316,14 +323,14 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     )
 
     # --- 4. Penanganan Ketidakseimbangan Data ---
-    # FIX: Konversi raw KSS label ke class index (0,1,2) sebelum hitung weight
-    def kss_to_class(kss):
-        if kss <= 3: return 0
-        elif kss <= 6: return 1
-        else: return 2
-    
+    # Gunakan kss_to_class dari datareader — otomatis sesuai Config.NUM_CLASSES
     train_labels = [kss_to_class(item['label']) for item in train_dataset.samples]
-    class_weights = compute_inverse_weight(train_labels, num_classes=Config.NUM_CLASSES).to(device)
+    class_weights = compute_inverse_weight(train_labels, num_classes=Config.NUM_CLASSES)
+    
+    # CAP weights: maksimum 3x dari weight terkecil
+    # Mencegah weight ekstrem yang menyebabkan gradient meledak
+    min_w = class_weights.min()
+    class_weights = torch.clamp(class_weights, max=min_w * 3.0).to(device)
     print(f"\nBobot Kelas (Fold {current_fold}): {class_weights}")
 
     # --- 5. Inisialisasi Model ---
@@ -467,23 +474,25 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         # ========================================
         # LOGGING KE WANDB
         # ========================================
+        # Per-class F1 logging — otomatis sesuai NUM_CLASSES
+        wandb_log = {
+            "epoch": epoch + 1,
+            "learning_rate": current_lr,
+            "train/loss": avg_train_loss,
+            "train/accuracy": train_acc.item(),
+            "train/f1_macro": train_f1_macro,
+            "val/loss": avg_val_loss,
+            "val/accuracy": val_acc.item(),
+            "val/f1_macro": val_f1_macro,
+        }
+        # Tambahkan F1 per kelas secara dinamis
+        class_log_names = ['alert', 'drowsy'] if Config.NUM_CLASSES == 2 else ['alert', 'low_vigilance', 'drowsy']
+        for i, cname in enumerate(class_log_names):
+            wandb_log[f"train/f1_{cname}"] = train_metrics[f'class_{i}']['f1'].item()
+            wandb_log[f"val/f1_{cname}"]   = val_metrics[f'class_{i}']['f1'].item()
+
         if Config.USE_WANDB:
-            wandb.log({
-                "epoch": epoch + 1,
-                "learning_rate": current_lr,  # ✅ Log LR
-                "train/loss": avg_train_loss,
-                "train/accuracy": train_acc.item(),
-                "train/f1_macro": train_f1_macro,
-                "train/f1_alert": train_metrics['class_0']['f1'].item(),
-                "train/f1_low_vigilance": train_metrics['class_1']['f1'].item(),
-                "train/f1_drowsy": train_metrics['class_2']['f1'].item(),
-                "val/loss": avg_val_loss,
-                "val/accuracy": val_acc.item(),
-                "val/f1_macro": val_f1_macro,
-                "val/f1_alert": val_metrics['class_0']['f1'].item(),
-                "val/f1_low_vigilance": val_metrics['class_1']['f1'].item(),
-                "val/f1_drowsy": val_metrics['class_2']['f1'].item(),
-            })
+            wandb.log(wandb_log)
 
         # Print hasil epoch
         print(f"\n📊 Epoch {epoch+1}/{Config.EPOCHS} Summary:")

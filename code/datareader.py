@@ -4,8 +4,11 @@ import torch
 import pandas as pd
 import mne
 import random
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader, Sampler
-from collections import defaultdict
+from collections import defaultdict, Counter
 from sklearn.model_selection import GroupKFold
 from config import Config
 
@@ -16,71 +19,101 @@ np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
 
-# Augmentasi EEG
+
+def kss_to_class(kss: int) -> int:
+    """Konversi nilai KSS mentah ke indeks kelas."""
+    if Config.NUM_CLASSES == 2:
+        # Binary: Alert = KSS 1-3 (0), Drowsy = KSS 4-9 (1)
+        return 0 if kss <= 3 else 1
+    else:
+        # 3-class: Alert(0), Low Vigilance(1), Drowsy(2)
+        if kss <= 3:   return 0
+        elif kss <= 6: return 1
+        else:          return 2
+
+def class_name(class_idx: int) -> str:
+    """Nama kelas berdasarkan indeks."""
+    if Config.NUM_CLASSES == 2:
+        return ['Alert', 'Drowsy'][class_idx]
+    else:
+        return ['Alert', 'Low Vigilance', 'Drowsy'][class_idx]
+
+
+# ============================================================
+# AUGMENTASI EEG
+# ============================================================
+
 class EEGAugmentation:
-    def __init__(self, gaussian_std=Config.AUG_GAUSSIAN_NOISE_STD, amplitude_range=Config.AUG_AMPLITUDE_SCALE_RANGE, time_shift_max=Config.AUG_TIME_SHIFT_MAX, prob=0.5):
-        self.gaussian_std = gaussian_std
+    def __init__(
+        self,
+        gaussian_std=Config.AUG_GAUSSIAN_NOISE_STD,
+        amplitude_range=Config.AUG_AMPLITUDE_SCALE_RANGE,
+        time_shift_max=Config.AUG_TIME_SHIFT_MAX,
+        prob=0.5
+    ):
+        self.gaussian_std    = gaussian_std
         self.amplitude_range = amplitude_range
-        self.time_shift_max = time_shift_max
-        self.prob = prob
-    
+        self.time_shift_max  = time_shift_max
+        self.prob            = prob
+
     def add_gaussian_noise(self, signal):
         if np.random.rand() < self.prob:
-            noise = torch.randn_like(signal) * self.gaussian_std
+            noise  = torch.randn_like(signal) * self.gaussian_std
             signal = signal + noise
         return signal
-    
+
     def amplitude_scaling(self, signal):
         if np.random.rand() < self.prob:
-            scale = np.random.uniform(*self.amplitude_range)
+            scale  = np.random.uniform(*self.amplitude_range)
             signal = signal * scale
         return signal
-    
+
     def time_shift(self, signal):
         if np.random.rand() < self.prob:
-            shift = np.random.randint(-self.time_shift_max, self.time_shift_max)
+            shift  = np.random.randint(-self.time_shift_max, self.time_shift_max)
             signal = torch.roll(signal, shifts=shift, dims=1)
         return signal
 
+
+# ============================================================
+# DATASET
+# ============================================================
+
 class EEGDataset(Dataset):
-    def __init__(self, data_dir, csv_path, fold, split, n_splits, window_sec, stride_sec, use_augmentation=False):
-        self.data_dir = data_dir
-        self.window_sec = window_sec
+    def __init__(
+        self,
+        data_dir, csv_path,
+        fold, split, n_splits,
+        window_sec, stride_sec,
+        use_augmentation=False
+    ):
+        self.data_dir         = data_dir
+        self.window_sec       = window_sec
+        self.stride_sec       = stride_sec
         self.use_augmentation = use_augmentation
-        # FIX: Gunakan stride_sec yang dikirim, jangan di-override hardcoded
-        self.stride_sec = stride_sec
-        
+
         df = pd.read_csv(csv_path)
         if 'subject_id' not in df.columns:
-            # DROZY format: "1-1.edf" -> subject_id = "1"
+            # DROZY format: "1-1.edf" → subject_id = "1"
             df['subject_id'] = df['filename'].apply(lambda x: x.split('-')[0])
 
-        # Gunakan GroupKFold untuk memastikan rekaman dari subjek
-        gkf = GroupKFold(n_splits=n_splits)
+        gkf    = GroupKFold(n_splits=n_splits)
         splits = list(gkf.split(df, df['label'], groups=df['subject_id']))
         train_idx, val_idx = splits[fold]
-        
-        selected_idx = train_idx if split == 'train' else val_idx
+
+        selected_idx   = train_idx if split == 'train' else val_idx
         self.file_list = df.iloc[selected_idx][['filename', 'label']].values.tolist()
-        
-        self.samples = []
+
+        self.samples  = []
         total_windows = 0
+        SKIP_FIRST_SEC = 30  # Buang 30 detik pertama (stabilisasi)
 
-        print(f"[{split.upper()}] Mengindeks File (Window={self.window_sec}s, Stride={self.stride_sec}s)...")
-
-        # Skenario windowing bersih tanpa filter PVT:
-        # Alasan menghapus filter PVT:
-        # 1. KSS dicatat SEBELUM sesi dimulai — memfilter berdasarkan hasil PVT
-        #    menciptakan bias seleksi yang bertentangan dengan label
-        # 2. Window tanpa stimulus PVT (mayoritas) selalu lolos filter -> tidak konsisten
-        # 3. Dependency pada pvt-rt/*.csv menyebabkan rekaman di-skip diam-diam
-        #
-        # Skenario pengganti: ambil seluruh rekaman dengan sliding window,
-        # buang hanya 30 detik PERTAMA (stabilisasi awal subjek)
-        SKIP_FIRST_SEC = 30  # Buang 30 detik pertama tiap rekaman
+        mode_str = f"{Config.NUM_CLASSES}-class"
+        print(f"[{split.upper()} | {mode_str}] Mengindeks file "
+              f"(Window={window_sec}s, Stride={stride_sec}s)...")
 
         for filename, label in self.file_list:
-            # Skip rekaman dengan KSS=0 (tidak valid, hanya ada di 7-1.edf)
+            # Skip KSS=0 (hanya 7-1.edf, tidak valid)
             if label == 0:
                 print(f"  [SKIP] {filename}: KSS=0 tidak valid")
                 continue
@@ -91,162 +124,388 @@ class EEGDataset(Dataset):
                 continue
 
             try:
-                raw_info = mne.io.read_raw_edf(file_path, preload=False, verbose='error')
+                raw_info     = mne.io.read_raw_edf(file_path, preload=False, verbose='error')
                 duration_sec = raw_info.times[-1]
 
-                # Mulai dari detik ke-30 (lewati stabilisasi awal)
-                # Akhiri sehingga window terakhir tidak melebihi durasi
                 effective_start = SKIP_FIRST_SEC
-                max_start = duration_sec - self.window_sec
+                max_start       = duration_sec - self.window_sec
 
                 if max_start <= effective_start:
-                    print(f"  [SKIP] {filename}: rekaman terlalu pendek ({duration_sec:.1f}s)")
+                    print(f"  [SKIP] {filename}: terlalu pendek ({duration_sec:.1f}s)")
                     continue
 
-                starts = np.arange(effective_start, max_start, self.stride_sec)
-                for start in starts:
+                for start in np.arange(effective_start, max_start, self.stride_sec):
                     self.samples.append({
                         'file_path': file_path,
                         'start_sec': float(start),
-                        'label': label
+                        'label':     label,            # raw KSS (disimpan untuk visualisasi)
+                        'class_idx': kss_to_class(label)
                     })
                     total_windows += 1
 
             except Exception as e:
                 print(f"  [ERROR] {filename}: {e}")
 
-        # Hitung distribusi kelas hasil windowing
-        from collections import Counter
-        def kss_to_class(k):
-            if k <= 3: return 'Alert'
-            elif k <= 6: return 'Low Vigilance'
-            else: return 'Drowsy'
-        dist = Counter(kss_to_class(s['label']) for s in self.samples)
-        print(f"Total Window: {total_windows} | Distribusi: {dict(dist)}")
+        dist = Counter(class_name(s['class_idx']) for s in self.samples)
+        print(f"Total Window: {total_windows} | Distribusi: {dict(dist)}\n")
+
+    # ----------------------------------------------------------
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        sample_info = self.samples[idx]
-        file_path = sample_info['file_path']
-        start_sec = sample_info['start_sec']
-        raw_label = sample_info['label']
-        
-        if raw_label <= 3: label = 0   
-        elif raw_label <= 6: label = 1   
-        else: label = 2   
-        
+        info      = self.samples[idx]
+        file_path = info['file_path']
+        start_sec = info['start_sec']
+        class_idx = info['class_idx']
+
         try:
             raw = mne.io.read_raw_edf(file_path, preload=True, verbose='error')
-            target_channels = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
-            raw.pick(target_channels)
-            
-            t_end = start_sec + self.window_sec
-            raw.crop(tmin=start_sec, tmax=t_end, include_tmax=False)
-            
-            signal = raw.get_data() * 1e6  
-            
-            mean = np.mean(signal, axis=1, keepdims=True)
-            std = np.std(signal, axis=1, keepdims=True)
-            signal = (signal - mean) / (std + 1e-6)
-            
+            raw.pick(['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H'])
+            raw.crop(tmin=start_sec, tmax=start_sec + self.window_sec, include_tmax=False)
+
+            signal = raw.get_data() * 1e6            # Volt → μV
+            mean   = np.mean(signal, axis=1, keepdims=True)
+            std    = np.std(signal,  axis=1, keepdims=True)
+            signal = (signal - mean) / (std + 1e-6)  # Z-score per channel
+
             signal = torch.tensor(signal, dtype=torch.float32)
-            
+
             if self.use_augmentation:
-                aug = EEGAugmentation()
+                aug    = EEGAugmentation()
                 signal = aug.add_gaussian_noise(signal)
                 signal = aug.amplitude_scaling(signal)
-            
-            return signal, torch.tensor(label, dtype=torch.long)
+
+            return signal, torch.tensor(class_idx, dtype=torch.long)
 
         except Exception:
             dummy_len = int(self.window_sec * Config.SAMPLE_RATE)
-            return torch.zeros((Config.IN_CHANNELS, dummy_len)), torch.tensor(0, dtype=torch.long)
+            return (torch.zeros((Config.IN_CHANNELS, dummy_len)),
+                    torch.tensor(0, dtype=torch.long))
 
-# Sampler untuk memastikan batch berisi rekaman unik
+
+# ============================================================
+# SAMPLER & COLLATE
+# ============================================================
+
 class UniqueRecordingBatchSampler(Sampler):
     def __init__(self, dataset, batch_size):
-        self.dataset = dataset
+        self.dataset    = dataset
         self.batch_size = batch_size
-        
+
         self.file_to_indices = defaultdict(list)
-        for idx, sample in enumerate(self.dataset.samples):
+        for idx, sample in enumerate(dataset.samples):
             self.file_to_indices[sample['file_path']].append(idx)
-            
+
         self.unique_files = list(self.file_to_indices.keys())
-        
+
         if len(self.unique_files) < self.batch_size:
-            print(f"Warning: Rekaman unik ({len(self.unique_files)}) < Batch Size ({self.batch_size}). Menyesuaikan batch size.")
+            print(f"Warning: rekaman unik ({len(self.unique_files)}) < "
+                  f"batch size ({self.batch_size}). Disesuaikan.")
             self.batch_size = len(self.unique_files)
 
     def __iter__(self):
-        working_indices = {}
-        for file_path in self.unique_files:
-            indices = self.file_to_indices[file_path].copy()
-            np.random.shuffle(indices)
-            working_indices[file_path] = indices
-            
-        available_files = list(self.unique_files)
-        
-        while len(available_files) >= self.batch_size:
-            selected_files = random.sample(available_files, self.batch_size)
-            batch = []
-            for f in selected_files:
-                batch.append(working_indices[f].pop())
-                if len(working_indices[f]) == 0:
-                    available_files.remove(f)
+        working = {f: self.file_to_indices[f].copy() for f in self.unique_files}
+        for lst in working.values():
+            np.random.shuffle(lst)
+
+        available = list(self.unique_files)
+        while len(available) >= self.batch_size:
+            selected = random.sample(available, self.batch_size)
+            batch    = []
+            for f in selected:
+                batch.append(working[f].pop())
+                if len(working[f]) == 0:
+                    available.remove(f)
             yield batch
 
     def __len__(self):
         return len(self.dataset) // self.batch_size
 
-# Fungsi collate untuk DataLoader
+
 def collate_fn(batch):
     signals, labels = zip(*batch)
-    signals = torch.stack(signals)
-    labels = torch.stack(labels)
-    return signals, labels
+    return torch.stack(signals), torch.stack(labels)
+
+
+# ============================================================
+# HELPER: muat sinyal mentah μV (tanpa normalisasi, untuk viz)
+# ============================================================
+
+CHANNEL_NAMES = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
+
+def _load_raw_signal(file_path, start_sec, window_sec):
+    """Muat sinyal dalam μV tanpa normalisasi."""
+    raw = mne.io.read_raw_edf(file_path, preload=True, verbose='error')
+    raw.pick(['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H'])
+    raw.crop(tmin=start_sec, tmax=start_sec + window_sec, include_tmax=False)
+    return raw.get_data() * 1e6   # (7, T)
+
+
+# ============================================================
+# VISUALISASI 1 — Sinyal mentah per kelas
+# ============================================================
+
+def visualize_class_comparison(dataset, n_examples=2, save_path='sample_comparison.png'):
+    """
+    Tampilkan n_examples window per kelas secara berdampingan.
+    Sinyal dalam μV TANPA normalisasi agar mudah dibandingkan secara visual.
+
+    Layout:
+        Baris  = channel (7 channel)
+        Kolom  = contoh-1 kelas-A | contoh-2 kelas-A | contoh-1 kelas-B | ...
+    """
+    n_classes  = Config.NUM_CLASSES
+    window_sec = dataset.window_sec
+    sr         = Config.SAMPLE_RATE
+    n_ch       = len(CHANNEL_NAMES)
+
+    # Kumpulkan indeks per kelas
+    idx_per_class = defaultdict(list)
+    for i, s in enumerate(dataset.samples):
+        idx_per_class[s['class_idx']].append(i)
+
+    chosen = {}
+    for c in range(n_classes):
+        pool = idx_per_class[c]
+        if len(pool) == 0:
+            print(f"[VIZ] Tidak ada sample kelas {class_name(c)}, skip.")
+            chosen[c] = []
+        else:
+            chosen[c] = random.sample(pool, min(n_examples, len(pool)))
+
+    total_cols = n_examples * n_classes
+    fig_w      = max(14, total_cols * 5)
+    fig_h      = n_ch * 1.8 + 1.5
+
+    fig, axes = plt.subplots(
+        nrows=n_ch, ncols=total_cols,
+        figsize=(fig_w, fig_h),
+        sharex=True
+    )
+    # Pastikan selalu 2D
+    if total_cols == 1:
+        axes = axes.reshape(-1, 1)
+    if n_ch == 1:
+        axes = axes.reshape(1, -1)
+
+    t      = np.linspace(0, window_sec, int(window_sec * sr))
+    colors = {0: '#1565C0', 1: '#FF6F00', 2: '#B71C1C'}  # biru tua, amber, merah tua
+
+    col_idx = 0
+    for c in range(n_classes):
+        color = colors.get(c, '#424242')
+        for ex_num, sample_i in enumerate(chosen[c]):
+            info = dataset.samples[sample_i]
+            try:
+                sig = _load_raw_signal(info['file_path'], info['start_sec'], window_sec)
+            except Exception as e:
+                print(f"[VIZ] Gagal muat sample: {e}")
+                col_idx += 1
+                continue
+
+            axes[0, col_idx].set_title(
+                f"{class_name(c)} — Contoh {ex_num + 1}\n"
+                f"KSS={info['label']} | t={info['start_sec']:.0f}s",
+                fontsize=9, fontweight='bold', color=color, pad=4
+            )
+
+            for ch in range(n_ch):
+                ax = axes[ch, col_idx]
+                ax.plot(t, sig[ch], color=color, linewidth=0.5, alpha=0.9)
+                ax.axhline(0, color='gray', linewidth=0.3, linestyle='--')
+
+                if col_idx == 0:
+                    ax.set_ylabel(CHANNEL_NAMES[ch], fontsize=8,
+                                  rotation=0, labelpad=30, va='center')
+
+                ax.tick_params(labelsize=6)
+                ax.set_xlim(0, window_sec)
+
+                # Skala Y adaptif, dibatasi ±150 μV
+                peak = np.abs(sig[ch]).max()
+                ymax = min(max(peak * 1.15, 15), 150)
+                ax.set_ylim(-ymax, ymax)
+
+                if ch == n_ch - 1:
+                    ax.set_xlabel('Waktu (s)', fontsize=7)
+
+            # Garis pemisah antar kelas
+            if ex_num == n_examples - 1 and c < n_classes - 1:
+                for ch in range(n_ch):
+                    axes[ch, col_idx].spines['right'].set_edgecolor('#BDBDBD')
+                    axes[ch, col_idx].spines['right'].set_linewidth(2)
+
+            col_idx += 1
+
+    mode_str = f"{n_classes}-Class"
+    fig.suptitle(
+        f'Perbandingan Sinyal EEG/EOG — {mode_str}\n'
+        f'Window={window_sec}s | {sr}Hz | 7 Channel | Amplitudo dalam μV (tanpa normalisasi)',
+        fontsize=11, fontweight='bold', y=1.01
+    )
+    plt.tight_layout(rect=[0.045, 0, 1, 1])
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"[VIZ] Sinyal tersimpan → {save_path}")
+
+
+# ============================================================
+# VISUALISASI 2 — Power Spectral Density per kelas
+# ============================================================
+
+def visualize_psd_comparison(dataset, n_samples_per_class=10, save_path='psd_comparison.png'):
+    from scipy.signal import welch
+
+    n_classes  = Config.NUM_CLASSES
+    window_sec = dataset.window_sec
+    sr         = Config.SAMPLE_RATE
+    n_ch       = len(CHANNEL_NAMES)
+
+    # Kumpulkan PSD per kelas per channel
+    psd_acc = {c: [[] for _ in range(n_ch)] for c in range(n_classes)}
+
+    idx_per_class = defaultdict(list)
+    for i, s in enumerate(dataset.samples):
+        idx_per_class[s['class_idx']].append(i)
+
+    for c in range(n_classes):
+        pool   = idx_per_class[c]
+        chosen = random.sample(pool, min(n_samples_per_class, len(pool)))
+        for i in chosen:
+            info = dataset.samples[i]
+            try:
+                sig = _load_raw_signal(info['file_path'], info['start_sec'], window_sec)
+                for ch in range(n_ch):
+                    _, pxx = welch(sig[ch], fs=sr, nperseg=sr * 2)
+                    psd_acc[c][ch].append(pxx)
+            except Exception:
+                continue
+
+    # Referensi frekuensi
+    f_ref, _ = welch(np.zeros(int(window_sec * sr)), fs=sr, nperseg=sr * 2)
+
+    # Band shading
+    bands = [
+        ('δ (1-4)', 1,  4,  '#E3F2FD'),
+        ('θ (4-8)', 4,  8,  '#FFF9C4'),
+        ('α (8-12)', 8, 12, '#F3E5F5'),
+        ('β (12-30)', 12, 30, '#E8F5E9'),
+    ]
+
+    colors = {0: '#1565C0', 1: '#FF6F00', 2: '#B71C1C'}
+
+    fig, axes = plt.subplots(nrows=n_ch, ncols=1, figsize=(11, n_ch * 2.5), sharex=True)
+    if n_ch == 1:
+        axes = [axes]
+
+    for ch in range(n_ch):
+        ax = axes[ch]
+
+        # Band shading
+        for bname, blo, bhi, bcol in bands:
+            ax.axvspan(blo, bhi, alpha=0.18, color=bcol)
+            if ch == 0:
+                ax.text((blo + bhi) / 2, 1, bname,
+                        ha='center', va='bottom', fontsize=6.5,
+                        color='#757575', transform=ax.get_xaxis_transform())
+
+        for c in range(n_classes):
+            psds = psd_acc[c][ch]
+            if len(psds) == 0:
+                continue
+            arr      = np.array(psds)
+            mean_psd = np.mean(arr, axis=0)
+            std_psd  = np.std(arr,  axis=0)
+
+            ax.semilogy(f_ref, mean_psd,
+                        label=f"{class_name(c)} (n={len(psds)})",
+                        color=colors[c], linewidth=1.8)
+            ax.fill_between(f_ref,
+                            np.maximum(mean_psd - std_psd, 1e-3),
+                            mean_psd + std_psd,
+                            alpha=0.15, color=colors[c])
+
+        ax.set_xlim(1, 35)
+        ax.set_ylabel(f'{CHANNEL_NAMES[ch]}\n(μV²/Hz)', fontsize=7.5)
+        ax.tick_params(labelsize=6.5)
+        ax.grid(True, alpha=0.25, which='both', linestyle='--')
+
+        if ch == 0:
+            ax.legend(fontsize=8, loc='upper right', framealpha=0.8)
+
+    axes[-1].set_xlabel('Frekuensi (Hz)', fontsize=9)
+    mode_str = f"{n_classes}-Class"
+    fig.suptitle(
+        f'Power Spectral Density per Kelas — {mode_str}\n'
+        f'Rata-rata {n_samples_per_class} sample/kelas | '
+        'Peningkatan θ & α = indikator kantuk',
+        fontsize=10, fontweight='bold'
+    )
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"[VIZ] PSD tersimpan → {save_path}")
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 if __name__ == "__main__":
-    print("Testing DataReader Hibrida (KSS + Filter PVT)...")
-    
-    print("\n--- MENGUJI DATA TRAINING (FOLD 0) ---")
+
+    mode_str = f"{Config.NUM_CLASSES}-Class"
+    print("=" * 60)
+    print(f"  EEGDataset — Mode: {mode_str}")
+    print("=" * 60)
+
     train_dataset = EEGDataset(
-        data_dir='psg',        
-        csv_path='label/labels.csv', 
-        fold=0,
-        split='train',
-        n_splits=5,
+        data_dir='psg',
+        csv_path='label/labels.csv',
+        fold=0, split='train', n_splits=5,
         window_sec=Config.WINDOW_SEC,
-        stride_sec=5, # Stride 5 detik untuk perbanyak data training
+        stride_sec=5,
         use_augmentation=False
     )
-    
-    print("\n" + "="*40)
-    print(f"TOTAL DATA BERSIH (TRAIN) : {len(train_dataset)} jendela")
-    print("="*40)
-    
-    # Menghitung distribusi label secara manual
-    label_counts = {0: 0, 1: 0, 2: 0}
-    for sample in train_dataset.samples:
-        raw_label = sample['label']
-        if raw_label <= 3: 
-            label_counts[0] += 1
-        elif raw_label <= 6: 
-            label_counts[1] += 1
-        else: 
-            label_counts[2] += 1
-            
-    print("DISTRIBUSI LABEL:")
-    print(f"Alert (0)         : {label_counts[0]} sampel")
-    print(f"Low Vigilance (1) : {label_counts[1]} sampel")
-    print(f"Drowsy (2)        : {label_counts[2]} sampel")
-    print("="*40)
-    
-    # Cek shape tensor jika data tidak kosong
+
+    val_dataset = EEGDataset(
+        data_dir='psg',
+        csv_path='label/labels.csv',
+        fold=0, split='val', n_splits=5,
+        window_sec=Config.WINDOW_SEC,
+        stride_sec=Config.WINDOW_SEC,
+        use_augmentation=False
+    )
+
+    print("=" * 60)
+    print(f"  TRAIN : {len(train_dataset):>5} window")
+    print(f"  VAL   : {len(val_dataset):>5} window")
+
+    print("\n  Distribusi TRAIN:")
+    cnt = Counter(class_name(s['class_idx']) for s in train_dataset.samples)
+    for cls, n in sorted(cnt.items()):
+        print(f"    {cls:<16}: {n}")
+
+    print("\n  Distribusi VAL:")
+    cnt_v = Counter(class_name(s['class_idx']) for s in val_dataset.samples)
+    for cls, n in sorted(cnt_v.items()):
+        print(f"    {cls:<16}: {n}")
+    print("=" * 60)
+
     if len(train_dataset) > 0:
-        print("\nMemuat 1 sampel data untuk cek dimensi...")
         sig, lab = train_dataset[0]
-        print(f"Shape Signal Train : {sig.shape}")
-        print(f"Contoh Label       : {lab}")
+        print(f"\n  Shape signal : {sig.shape}  (channels × timesteps)")
+        print(f"  Label contoh : {lab.item()} = {class_name(lab.item())}")
+
+    print("\n[VIZ] Membuat plot sinyal mentah...")
+    visualize_class_comparison(train_dataset, n_examples=2,
+                               save_path='sample_comparison.png')
+
+    print("[VIZ] Membuat plot PSD...")
+    visualize_psd_comparison(train_dataset, n_samples_per_class=15,
+                             save_path='psd_comparison.png')
+
+    print("\nSelesai. Output:")
+    print("  sample_comparison.png  — sinyal μV Alert vs Drowsy")
+    print("  psd_comparison.png     — PSD theta/alpha per channel")

@@ -15,16 +15,16 @@ class Config:
     
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
-    NUM_CLASSES = 3      # KSS Categories: Alert, Low Vigilance, Drowsy
+    NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
     WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
     STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
     
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
-    EPOCHS = 25
-    LEARNING_RATE = 5e-4  # Naikkan dari 1e-4: model perlu sinyal gradient lebih kuat
-    WEIGHT_DECAY = 1e-4   # Turunkan dari 1e-3: jangan terlalu restrict model kecil
+    EPOCHS = 15
+    LEARNING_RATE = 1e-4  
+    WEIGHT_DECAY = 1e-4
     
     # Learning rate scheduler
     USE_SCHEDULER = True
