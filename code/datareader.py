@@ -18,7 +18,53 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
+# ============================================================
+# BANDPASS FILTER — dikontrol dari Config
+# Standar EEG klinis: 0.5–40 Hz
+#   - Low cutoff 0.5 Hz  : hilangkan DC offset & drift baseline
+#   - High cutoff 40 Hz  : hilangkan noise otot (EMG) & power line
+#   - EOG tetap difilter dengan range yang sama karena
+#     slow eye movement (0.5-4 Hz) dan blink (~1-3 Hz)
+#     masih dalam rentang ini
+#
+# Dikontrol via Config.USE_BANDPASS_FILTER
+# ============================================================
+BANDPASS_LOW  = 0.5   # Hz
+BANDPASS_HIGH = 40.0  # Hz
 
+
+def apply_bandpass(signal_uv: np.ndarray, sfreq: float) -> np.ndarray:
+    """
+    Terapkan bandpass filter Butterworth orde 4 pada sinyal EEG/EOG.
+
+    Args:
+        signal_uv : np.ndarray shape (n_channels, n_times), dalam μV
+        sfreq     : sampling frequency (Hz)
+
+    Returns:
+        sinyal yang sudah difilter, shape sama dengan input
+    """
+    from scipy.signal import butter, filtfilt
+
+    nyq  = sfreq / 2.0
+    low  = BANDPASS_LOW  / nyq
+    high = BANDPASS_HIGH / nyq
+
+    # Butterworth orde 4 — zero-phase (filtfilt) agar tidak ada phase shift
+    b, a = butter(4, [low, high], btype='band')
+
+    filtered = np.zeros_like(signal_uv)
+    for ch in range(signal_uv.shape[0]):
+        filtered[ch] = filtfilt(b, a, signal_uv[ch])
+
+    return filtered
+
+# ============================================================
+# FUNGSI KONVERSI LABEL
+# Dikontrol oleh Config.NUM_CLASSES:
+#   NUM_CLASSES = 3 → Alert(0) / Low Vigilance(1) / Drowsy(2)
+#   NUM_CLASSES = 2 → Alert(0) / Drowsy(1)
+# ============================================================
 
 def kss_to_class(kss: int) -> int:
     """Konversi nilai KSS mentah ke indeks kelas."""
@@ -166,6 +212,13 @@ class EEGDataset(Dataset):
             raw.crop(tmin=start_sec, tmax=start_sec + self.window_sec, include_tmax=False)
 
             signal = raw.get_data() * 1e6            # Volt → μV
+
+            # Bandpass filter 0.5–40 Hz (opsional, dikontrol Config)
+            # Dilakukan SEBELUM z-score agar normalisasi bekerja
+            # pada sinyal yang sudah bersih dari noise
+            if getattr(Config, 'USE_BANDPASS_FILTER', True):
+                signal = apply_bandpass(signal, sfreq=Config.SAMPLE_RATE)
+
             mean   = np.mean(signal, axis=1, keepdims=True)
             std    = np.std(signal,  axis=1, keepdims=True)
             signal = (signal - mean) / (std + 1e-6)  # Z-score per channel
@@ -236,11 +289,17 @@ def collate_fn(batch):
 CHANNEL_NAMES = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
 
 def _load_raw_signal(file_path, start_sec, window_sec):
-    """Muat sinyal dalam μV tanpa normalisasi."""
+    """Muat sinyal dalam μV tanpa normalisasi, dengan filter opsional."""
     raw = mne.io.read_raw_edf(file_path, preload=True, verbose='error')
     raw.pick(['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H'])
     raw.crop(tmin=start_sec, tmax=start_sec + window_sec, include_tmax=False)
-    return raw.get_data() * 1e6   # (7, T)
+    signal = raw.get_data() * 1e6   # (7, T)
+
+    # Terapkan filter yang sama seperti training agar visualisasi konsisten
+    if getattr(Config, 'USE_BANDPASS_FILTER', True):
+        signal = apply_bandpass(signal, sfreq=Config.SAMPLE_RATE)
+
+    return signal
 
 
 # ============================================================
@@ -356,6 +415,13 @@ def visualize_class_comparison(dataset, n_examples=2, save_path='sample_comparis
 # ============================================================
 
 def visualize_psd_comparison(dataset, n_samples_per_class=10, save_path='psd_comparison.png'):
+    """
+    Bandingkan rata-rata PSD antar kelas per channel EEG.
+
+    Theta (4-8 Hz) dan Alpha (8-12 Hz) adalah marker utama kantuk:
+    keduanya meningkat saat drowsy.  Plot ini memperlihatkan apakah
+    sinyal dalam dataset memang mencerminkan pola tersebut.
+    """
     from scipy.signal import welch
 
     n_classes  = Config.NUM_CLASSES
