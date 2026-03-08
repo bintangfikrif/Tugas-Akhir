@@ -8,7 +8,7 @@ class Config:
     
     # Mamba specific parameters
     MAMBA_D_MODEL = 32   # Naikkan kapasitas (dari 32)
-    MAMBA_N_LAYERS = 2   # Number of Mamba layers
+    MAMBA_N_LAYERS = 4   # Number of Mamba layers
     MAMBA_D_STATE = 16   # SSM state expansion factor
     MAMBA_D_CONV = 4     # Local convolution width
     MAMBA_EXPAND = 2     # Block expansion factor
