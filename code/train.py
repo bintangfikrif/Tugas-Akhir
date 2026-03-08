@@ -370,8 +370,8 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         weight_decay=Config.WEIGHT_DECAY
     )
     
-    # FIX: Hapus label_smoothing — kontraproduktif untuk dataset kecil
-    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+    # Focal Loss
+    criterion = torch.nn.FocalLoss(weigth=class_weights)
     
     # TAMBAHKAN Learning Rate Scheduler 
     scheduler = None
