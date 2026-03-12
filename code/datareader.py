@@ -10,6 +10,22 @@ import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader, Sampler
 from collections import defaultdict, Counter
 from sklearn.model_selection import GroupKFold
+
+# ============================================================
+# FIXED SUBJECT SPLIT — Train / Val / Test
+#
+# Dipilih berdasarkan analisis labels.csv:
+#   VAL  : Subjek 1  → punya Alert + LV + Drowsy (paling beragam)
+#   TEST : Subjek 4  → punya LV + Drowsy (untuk evaluasi final)
+#   TRAIN: Semua subjek lainnya (12 subjek)
+#
+# Prinsip:
+#   - Val harus punya semua kelas agar loss informatif setiap epoch
+#   - Val dan Test adalah subjek yang TIDAK pernah dilihat saat training
+#   - Seed fixed via RANDOM_SEED untuk reproduksibilitas
+# ============================================================
+VAL_SUBJECTS  = ['1']   # Subjek 1: KSS 3,6,7 → Alert+LV+Drowsy
+TEST_SUBJECTS = ['4']   # Subjek 4: KSS 4,8,9 → LV+Drowsy
 from config import Config
 
 # Set random seeds untuk reproduksibilitas
@@ -129,9 +145,11 @@ class EEGDataset(Dataset):
     def __init__(
         self,
         data_dir, csv_path,
-        fold, split, n_splits,
+        split,                  # 'train', 'val', atau 'test'
         window_sec, stride_sec,
-        use_augmentation=False
+        use_augmentation=False,
+        # Parameter lama dipertahankan agar tidak breaking jika masih dipanggil
+        fold=0, n_splits=None,
     ):
         self.data_dir         = data_dir
         self.window_sec       = window_sec
@@ -140,15 +158,18 @@ class EEGDataset(Dataset):
 
         df = pd.read_csv(csv_path)
         if 'subject_id' not in df.columns:
-            # DROZY format: "1-1.edf" → subject_id = "1"
             df['subject_id'] = df['filename'].apply(lambda x: x.split('-')[0])
 
-        gkf    = GroupKFold(n_splits=n_splits)
-        splits = list(gkf.split(df, df['label'], groups=df['subject_id']))
-        train_idx, val_idx = splits[fold]
+        # ── Fixed subject split ──────────────────────────────────
+        # Pilih baris sesuai split berdasarkan subject_id
+        if split == 'val':
+            mask = df['subject_id'].isin(VAL_SUBJECTS)
+        elif split == 'test':
+            mask = df['subject_id'].isin(TEST_SUBJECTS)
+        else:  # 'train'
+            mask = ~df['subject_id'].isin(VAL_SUBJECTS + TEST_SUBJECTS)
 
-        selected_idx   = train_idx if split == 'train' else val_idx
-        self.file_list = df.iloc[selected_idx][['filename', 'label']].values.tolist()
+        self.file_list = df[mask][['filename', 'label']].values.tolist()
 
         self.samples  = []
         total_windows = 0

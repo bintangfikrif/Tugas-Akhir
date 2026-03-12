@@ -74,7 +74,7 @@ def plot_confusion_matrix(y_true, y_pred, epoch, fold, phase='val', save_dir='co
         y_pred = y_pred.cpu().numpy()
     
     # Hitung confusion matrix
-    cm = confusion_matrix(y_true, y_pred, labels=list(range(Config.NUM_CLASSES)))
+    cm = confusion_matrix(y_true, y_pred)
     
     # Class names otomatis dari Config.NUM_CLASSES
     if Config.NUM_CLASSES == 2:
@@ -232,17 +232,16 @@ def print_classification_report(cm, class_names=None):
     
     return metrics
 
-def train(fold=0):  # ✅ TAMBAHKAN parameter fold
+def train(fold=0):  # fold dipertahankan agar tidak breaking
     # --- 1. Konfigurasi Eksperimen ---
     device = torch.device("cuda" if Config.USE_CUDA and torch.cuda.is_available() else "cpu")
     
-    # ✅ GUNAKAN Config untuk semua parameter
     window_sec = Config.WINDOW_SEC
     n_splits = Config.N_SPLITS
     batch_size = Config.BATCH_SIZE
     epochs = Config.EPOCHS
     lr = Config.LEARNING_RATE
-    current_fold = fold  # 
+    current_fold = 0  # fixed split, selalu 0
     
     # Konfigurasi Confusion Matrix
     cm_save_interval = 5
@@ -273,32 +272,39 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Mamba_Fold_{current_fold}_3Class_14fold",
+            name=f"Mamba_FixedSplit_{Config.NUM_CLASSES}Class",
             config=clean_config,  
             reinit=True  
         )
 
     # --- 3. Persiapan Dataset & Dataloader ---
+    # Fixed subject split: Train=12 subj, Val=Subj1, Test=Subj4
+    # Val dan Test TIDAK pernah dilihat model selama training
     train_dataset = EEGDataset(
         data_dir=Config.DATA_DIR,
         csv_path=os.path.join('label/labels.csv'),
-        fold=fold,
         split='train',
-        n_splits=Config.N_SPLITS,
         window_sec=Config.WINDOW_SEC,
-        stride_sec=Config.STRIDE_SEC,   
-        use_augmentation=True
-    )           
-    
+        stride_sec=Config.STRIDE_SEC,
+        use_augmentation=Config.USE_AUGMENTATION,
+    )
+
     val_dataset = EEGDataset(
         data_dir=Config.DATA_DIR,
         csv_path=os.path.join('label/labels.csv'),
-        fold=fold,
         split='val',
-        n_splits=Config.N_SPLITS,
         window_sec=Config.WINDOW_SEC,
-        stride_sec=Config.STRIDE_SEC,   
-        use_augmentation=False          
+        stride_sec=Config.STRIDE_SEC,   # sama dengan train agar konsisten
+        use_augmentation=False,
+    )
+
+    test_dataset = EEGDataset(
+        data_dir=Config.DATA_DIR,
+        csv_path=os.path.join('label/labels.csv'),
+        split='test',
+        window_sec=Config.WINDOW_SEC,
+        stride_sec=Config.STRIDE_SEC,
+        use_augmentation=False,
     )
 
     # FIX: Gunakan standard DataLoader — UniqueRecordingBatchSampler
@@ -315,6 +321,15 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     
     val_loader = DataLoader(
         val_dataset,
+        batch_size=Config.BATCH_SIZE,
+        shuffle=False,
+        collate_fn=collate_fn,
+        num_workers=Config.NUM_WORKERS,
+        pin_memory=True if device.type == 'cuda' else False
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
         batch_size=Config.BATCH_SIZE,
         shuffle=False,
         collate_fn=collate_fn,
@@ -530,7 +545,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             patience_counter = 0  # ✅ Reset counter
             
             if Config.SAVE_BEST_ONLY:
-                model_name = f"best_mamba_fold{current_fold}.pt"
+                model_name = f"best_mamba_fixed_split.pt"
                 raw_config = Config.to_dict()
                 clean_config = {
                     k: v for k, v in raw_config.items() 
@@ -576,34 +591,40 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         wandb.run.summary["best_val_acc"] = best_val_acc.item()
         wandb.run.summary["best_val_f1"] = best_val_f1
     
-    # Final confusion matrix dengan best model
+    # Load best model untuk evaluasi final
     print("📊 Generating Final Confusion Matrix with Best Model...")
-    checkpoint = torch.load(f"best_mamba_fold{current_fold}.pt")
+    checkpoint = torch.load("best_mamba_fixed_split.pt")
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
-    
-    final_val_preds = []
-    final_val_targets = []
-    
-    with torch.no_grad():
-        for signals, labels in val_loader:
-            signals = signals.to(device)
-            logits = model(signals)
-            preds = torch.argmax(logits, dim=1)
-            final_val_preds.append(preds.cpu())
-            final_val_targets.append(labels.cpu())
-    
-    final_val_preds = torch.cat(final_val_preds)
-    final_val_targets = torch.cat(final_val_targets)
-    
-    final_cm = plot_confusion_matrix(
-        final_val_targets, final_val_preds,
-        epoch='final', fold=current_fold,
-        phase='val_best_model', save_dir=cm_save_dir
-    )
-    
-    print("\n📋 Final Model Classification Report:")
-    print_classification_report(final_cm)
+
+    def run_eval(loader, phase_name):
+        preds_list, targets_list = [], []
+        with torch.no_grad():
+            for signals, labels in loader:
+                signals = signals.to(device)
+                logits  = model(signals)
+                preds   = torch.argmax(logits, dim=1)
+                preds_list.append(preds.cpu())
+                targets_list.append(labels.cpu())
+        all_preds   = torch.cat(preds_list)
+        all_targets = torch.cat(targets_list)
+        cm = plot_confusion_matrix(
+            all_targets, all_preds,
+            epoch='final', fold=0,
+            phase=phase_name, save_dir=cm_save_dir
+        )
+        print(f"\n📋 {phase_name.upper()} Classification Report:")
+        print_classification_report(cm)
+        return cm
+
+    # Evaluasi Val set (subjek 1)
+    run_eval(val_loader, 'val_best_model')
+
+    # Evaluasi Test set (subjek 4) — tidak pernah dilihat selama training
+    print("\n" + "="*60)
+    print("🧪 EVALUASI TEST SET (Subjek belum pernah dilihat model)")
+    print("="*60)
+    test_cm = run_eval(test_loader, 'test')
 
     if Config.USE_WANDB:
         wandb.finish()
@@ -611,34 +632,33 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     return best_val_acc.item(), best_val_f1
 
 if __name__ == "__main__":
-    # Train single fold
-    # train(fold=0)
+    train()
     
     # Fll 5-fold CV
-    results = []
-    for fold in range(Config.N_SPLITS):
-        print(f"\n{'='*70}")
-        print(f"📂 STARTING FOLD {fold + 1}/{Config.N_SPLITS}")
-        print(f"{'='*70}\n")
+    # results = []
+    # for fold in range(Config.N_SPLITS):
+    #     print(f"\n{'='*70}")
+    #     print(f"📂 STARTING FOLD {fold + 1}/{Config.N_SPLITS}")
+    #     print(f"{'='*70}\n")
         
-        acc, f1 = train(fold=fold)
-        results.append({'fold': fold, 'accuracy': acc, 'f1': f1})
+    #     acc, f1 = train(fold=fold)
+    #     results.append({'fold': fold, 'accuracy': acc, 'f1': f1})
         
-        print(f"\n✅ Fold {fold + 1} completed: Acc={acc:.4f}, F1={f1:.4f}\n")
+    #     print(f"\n✅ Fold {fold + 1} completed: Acc={acc:.4f}, F1={f1:.4f}\n")
     
-    # Ringkasan hasil
-    print("\n" + "="*70)
-    print("📊 5-FOLD CROSS VALIDATION RESULTS")
-    print("="*70)
-    for r in results:
-        print(f"Fold {r['fold']+1}: Acc={r['accuracy']:.4f}, F1={r['f1']:.4f}")
+    # # Ringkasan hasil
+    # print("\n" + "="*70)
+    # print("📊 5-FOLD CROSS VALIDATION RESULTS")
+    # print("="*70)
+    # for r in results:
+    #     print(f"Fold {r['fold']+1}: Acc={r['accuracy']:.4f}, F1={r['f1']:.4f}")
     
-    mean_acc = np.mean([r['accuracy'] for r in results])
-    std_acc = np.std([r['accuracy'] for r in results])
-    mean_f1 = np.mean([r['f1'] for r in results])
-    std_f1 = np.std([r['f1'] for r in results])
+    # mean_acc = np.mean([r['accuracy'] for r in results])
+    # std_acc = np.std([r['accuracy'] for r in results])
+    # mean_f1 = np.mean([r['f1'] for r in results])
+    # std_f1 = np.std([r['f1'] for r in results])
     
-    print("-"*70)
-    print(f"Mean Accuracy: {mean_acc:.4f} ± {std_acc:.4f}")
-    print(f"Mean F1-Score: {mean_f1:.4f} ± {std_f1:.4f}")
-    print("="*70)
+    # print("-"*70)
+    # print(f"Mean Accuracy: {mean_acc:.4f} ± {std_acc:.4f}")
+    # print(f"Mean F1-Score: {mean_f1:.4f} ± {std_f1:.4f}")
+    # print("="*70)

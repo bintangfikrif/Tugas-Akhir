@@ -24,7 +24,7 @@ class Config:
     BATCH_SIZE = 16
     EPOCHS = 50
     LEARNING_RATE = 1e-4  
-    WEIGHT_DECAY = 1e-2
+    WEIGHT_DECAY = 1e-3
     
     # Learning rate scheduler
     USE_SCHEDULER = True
@@ -35,7 +35,7 @@ class Config:
     EARLY_STOPPING_PATIENCE = 5  # Naikkan dari 10
     
     # ==================== Cross Validation ====================
-    N_SPLITS = 14         # 5-fold cross validation
+    N_SPLITS = 1         # 5-fold cross validation
     CURRENT_FOLD = 0
     
     # ==================== Loss Function ====================
