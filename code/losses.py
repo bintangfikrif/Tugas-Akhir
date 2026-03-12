@@ -39,7 +39,7 @@ def get_evaluation_metrics(predictions, targets):
     # Per-class metrics menggunakan rata-rata makro
     # Cocok untuk data tidak seimbang 
     metrics = {}
-    for cls in range(3):
+    for cls in range(Config.NUM_CLASSES):
         tp = ((predictions == cls) & (targets == cls)).sum().float()
         fp = ((predictions == cls) & (targets != cls)).sum().float()
         fn = ((predictions != cls) & (targets == cls)).sum().float()
