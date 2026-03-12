@@ -35,7 +35,7 @@ class Config:
     EARLY_STOPPING_PATIENCE = 15  # Naikkan dari 10
     
     # ==================== Cross Validation ====================
-    N_SPLITS = 5         # 5-fold cross validation
+    N_SPLITS = 14         # 5-fold cross validation
     CURRENT_FOLD = 0
     
     # ==================== Loss Function ====================
