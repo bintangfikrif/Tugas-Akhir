@@ -74,7 +74,7 @@ def plot_confusion_matrix(y_true, y_pred, epoch, fold, phase='val', save_dir='co
         y_pred = y_pred.cpu().numpy()
     
     # Hitung confusion matrix
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred, labels=list(range(Config.NUM_CLASSES)))
     
     # Class names otomatis dari Config.NUM_CLASSES
     if Config.NUM_CLASSES == 2:
@@ -273,7 +273,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Mamba_Fold_{current_fold}_3Class_5fold",
+            name=f"Mamba_Fold_{current_fold}_3Class_14fold",
             config=clean_config,  
             reinit=True  
         )
