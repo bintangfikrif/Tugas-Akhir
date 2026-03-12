@@ -22,9 +22,9 @@ class Config:
     
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
-    EPOCHS = 15
-    LEARNING_RATE = 1e-3  
-    WEIGHT_DECAY = 1e-4
+    EPOCHS = 50
+    LEARNING_RATE = 1e-4  
+    WEIGHT_DECAY = 1e-3
     
     # Learning rate scheduler
     USE_SCHEDULER = True
