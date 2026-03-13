@@ -273,7 +273,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Mamba_Fold_{current_fold}_2Class_30secWindows",
+            name=f"Mamba_Fold_{current_fold}_2Class_20secWindows",
             config=clean_config,  
             reinit=True  
         )
