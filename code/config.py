@@ -16,7 +16,7 @@ class Config:
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
     NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
-    WINDOW_SEC = 20       # Window size in seconds
+    WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
     STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
     
@@ -43,7 +43,7 @@ class Config:
     ORDINAL_IMPORTANCE = 1.0  # Weight for ordinal loss
     
     # ==================== Data Augmentation ====================
-    USE_BANDPASS_FILTER = False
+    USE_BANDPASS_FILTER = True
     USE_AUGMENTATION = True
     AUG_GAUSSIAN_NOISE_STD = 0.01
     AUG_AMPLITUDE_SCALE_RANGE = (0.9, 1.1)
