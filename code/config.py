@@ -8,17 +8,17 @@ class Config:
     
     # Mamba specific parameters
     MAMBA_D_MODEL = 32   # Naikkan kapasitas (dari 32)
-    MAMBA_N_LAYERS = 2   # Number of Mamba layers
+    MAMBA_N_LAYERS = 4   # Number of Mamba layers
     MAMBA_D_STATE = 16   # SSM state expansion factor
     MAMBA_D_CONV = 4     # Local convolution width
     MAMBA_EXPAND = 2     # Block expansion factor
     
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
-    NUM_CLASSES = 3      # 2-class: Alert(0) vs Drowsy(1)
-    WINDOW_SEC = 30       # Window size in seconds
+    NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
+    WINDOW_SEC = 10       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
-    STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
+    STRIDE_SEC = 5      # Sliding window stride untuk training (detik)
     
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
@@ -35,7 +35,7 @@ class Config:
     EARLY_STOPPING_PATIENCE = 5  # Naikkan dari 10
     
     # ==================== Cross Validation ====================
-    N_SPLITS = 1         # 5-fold cross validation
+    N_SPLITS = 5         # 5-fold cross validation
     CURRENT_FOLD = 0
     
     # ==================== Loss Function ====================

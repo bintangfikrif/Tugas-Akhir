@@ -10,22 +10,6 @@ import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader, Sampler
 from collections import defaultdict, Counter
 from sklearn.model_selection import GroupKFold
-
-# ============================================================
-# FIXED SUBJECT SPLIT — Train / Val / Test
-#
-# Dipilih berdasarkan analisis labels.csv:
-#   VAL  : Subjek 1  → punya Alert + LV + Drowsy (paling beragam)
-#   TEST : Subjek 4  → punya LV + Drowsy (untuk evaluasi final)
-#   TRAIN: Semua subjek lainnya (12 subjek)
-#
-# Prinsip:
-#   - Val harus punya semua kelas agar loss informatif setiap epoch
-#   - Val dan Test adalah subjek yang TIDAK pernah dilihat saat training
-#   - Seed fixed via RANDOM_SEED untuk reproduksibilitas
-# ============================================================
-VAL_SUBJECTS  = ['1']   # Subjek 1: KSS 3,6,7 → Alert+LV+Drowsy
-TEST_SUBJECTS = ['4']   # Subjek 4: KSS 4,8,9 → LV+Drowsy
 from config import Config
 
 # Set random seeds untuk reproduksibilitas
@@ -34,20 +18,8 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
-# ============================================================
-# BANDPASS FILTER — dikontrol dari Config
-# Standar EEG klinis: 0.5–40 Hz
-#   - Low cutoff 0.5 Hz  : hilangkan DC offset & drift baseline
-#   - High cutoff 40 Hz  : hilangkan noise otot (EMG) & power line
-#   - EOG tetap difilter dengan range yang sama karena
-#     slow eye movement (0.5-4 Hz) dan blink (~1-3 Hz)
-#     masih dalam rentang ini
-#
-# Dikontrol via Config.USE_BANDPASS_FILTER
-# ============================================================
 BANDPASS_LOW  = 0.5   # Hz
 BANDPASS_HIGH = 40.0  # Hz
-
 
 def apply_bandpass(signal_uv: np.ndarray, sfreq: float) -> np.ndarray:
     """
@@ -85,8 +57,8 @@ def apply_bandpass(signal_uv: np.ndarray, sfreq: float) -> np.ndarray:
 def kss_to_class(kss: int) -> int:
     """Konversi nilai KSS mentah ke indeks kelas."""
     if Config.NUM_CLASSES == 2:
-        # Binary: Alert = KSS 1-3 (0), Drowsy = KSS 4-9 (1)
-        return 0 if kss <= 3 else 1
+        # Binary: Alert = KSS 1-5 (0), Drowsy = KSS 6-9 (1)
+        return 0 if kss <= 5 else 1
     else:
         # 3-class: Alert(0), Low Vigilance(1), Drowsy(2)
         if kss <= 3:   return 0
@@ -145,11 +117,9 @@ class EEGDataset(Dataset):
     def __init__(
         self,
         data_dir, csv_path,
-        split,                  # 'train', 'val', atau 'test'
+        fold, split, n_splits,
         window_sec, stride_sec,
-        use_augmentation=False,
-        # Parameter lama dipertahankan agar tidak breaking jika masih dipanggil
-        fold=0, n_splits=None,
+        use_augmentation=False
     ):
         self.data_dir         = data_dir
         self.window_sec       = window_sec
@@ -158,18 +128,15 @@ class EEGDataset(Dataset):
 
         df = pd.read_csv(csv_path)
         if 'subject_id' not in df.columns:
+            # DROZY format: "1-1.edf" → subject_id = "1"
             df['subject_id'] = df['filename'].apply(lambda x: x.split('-')[0])
 
-        # ── Fixed subject split ──────────────────────────────────
-        # Pilih baris sesuai split berdasarkan subject_id
-        if split == 'val':
-            mask = df['subject_id'].isin(VAL_SUBJECTS)
-        elif split == 'test':
-            mask = df['subject_id'].isin(TEST_SUBJECTS)
-        else:  # 'train'
-            mask = ~df['subject_id'].isin(VAL_SUBJECTS + TEST_SUBJECTS)
+        gkf    = GroupKFold(n_splits=n_splits)
+        splits = list(gkf.split(df, df['label'], groups=df['subject_id']))
+        train_idx, val_idx = splits[fold]
 
-        self.file_list = df[mask][['filename', 'label']].values.tolist()
+        selected_idx   = train_idx if split == 'train' else val_idx
+        self.file_list = df.iloc[selected_idx][['filename', 'label']].values.tolist()
 
         self.samples  = []
         total_windows = 0
