@@ -88,7 +88,7 @@ class MambaDrowsinessDetector(nn.Module):
             nn.Linear(d_model, d_model // 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model // 2, num_classes) # Output 3 Logits [cite: 553]
+            nn.Linear(d_model // 2, num_classes)
         )
 
     def forward(self, x):

@@ -8,7 +8,7 @@ class Config:
     
     # Mamba specific parameters
     MAMBA_D_MODEL = 32   # Naikkan kapasitas (dari 32)
-    MAMBA_N_LAYERS = 4   # Number of Mamba layers
+    MAMBA_N_LAYERS = 2   # Number of Mamba layers
     MAMBA_D_STATE = 16   # SSM state expansion factor
     MAMBA_D_CONV = 4     # Local convolution width
     MAMBA_EXPAND = 2     # Block expansion factor
@@ -43,7 +43,7 @@ class Config:
     ORDINAL_IMPORTANCE = 1.0  # Weight for ordinal loss
     
     # ==================== Data Augmentation ====================
-    USE_BANDPASS_FILTER = True
+    USE_BANDPASS_FILTER = False
     USE_AUGMENTATION = True
     AUG_GAUSSIAN_NOISE_STD = 0.01
     AUG_AMPLITUDE_SCALE_RANGE = (0.9, 1.1)
