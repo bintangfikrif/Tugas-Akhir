@@ -108,7 +108,6 @@ class EEGAugmentation:
             signal = torch.roll(signal, shifts=shift, dims=1)
         return signal
 
-
 # ============================================================
 # DATASET
 # ============================================================
@@ -201,9 +200,6 @@ class EEGDataset(Dataset):
 
             signal = raw.get_data() * 1e6            # Volt → μV
 
-            # Bandpass filter 0.5–40 Hz (opsional, dikontrol Config)
-            # Dilakukan SEBELUM z-score agar normalisasi bekerja
-            # pada sinyal yang sudah bersih dari noise
             if getattr(Config, 'USE_BANDPASS_FILTER', True):
                 signal = apply_bandpass(signal, sfreq=Config.SAMPLE_RATE)
 
