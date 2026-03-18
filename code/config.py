@@ -16,15 +16,15 @@ class Config:
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
     NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
-    WINDOW_SEC = 60       # Window size in seconds
+    WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
     STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
     
     # ==================== Training Parameters ====================
     BATCH_SIZE = 16
     EPOCHS = 50
-    LEARNING_RATE = 1e-3  
-    WEIGHT_DECAY = 1e-4
+    LEARNING_RATE = 1e-4  
+    WEIGHT_DECAY = 1e-3
     
     # Learning rate scheduler
     USE_SCHEDULER = True
