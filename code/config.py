@@ -15,7 +15,7 @@ class Config:
     
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
-    NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
+    NUM_CLASSES = 3      # 2-class: Alert(0) vs Drowsy(1)
     WINDOW_SEC = 30       # Window size in seconds
     SAMPLE_RATE = 512    # Hz
     STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
@@ -28,18 +28,18 @@ class Config:
     
     # Learning rate scheduler
     USE_SCHEDULER = True
-    SCHEDULER_PATIENCE = 5   # Naikkan dari 3: beri waktu lebih sebelum reduce LR
+    SCHEDULER_PATIENCE = 5   
     SCHEDULER_FACTOR = 0.5
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 5  # Naikkan dari 10
+    EARLY_STOPPING_PATIENCE = 5  
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation
     CURRENT_FOLD = 0
     
     # ==================== Loss Function ====================
-    LOSS_TYPE = "ordinal"  # "ordinal" or "ce" (cross-entropy)
+    LOSS_TYPE = "ce"  # "ordinal" or "ce" (cross-entropy)
     ORDINAL_IMPORTANCE = 1.0  # Weight for ordinal loss
     
     # ==================== Data Augmentation ====================

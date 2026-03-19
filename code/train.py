@@ -273,7 +273,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"Fold_{current_fold}_2Class",
+            name=f"15_Fold_{current_fold}_{Config.NUM_CLASSES}Class",
             config=clean_config,  
             reinit=True  
         )
@@ -287,7 +287,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         n_splits=Config.N_SPLITS,
         window_sec=Config.WINDOW_SEC,
         stride_sec=Config.STRIDE_SEC,   
-        use_augmentation=True
+        use_augmentation=Config.USE_AUGMENTATION
     )           
     
     val_dataset = EEGDataset(
@@ -379,12 +379,12 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         from torch.optim.lr_scheduler import ReduceLROnPlateau
         scheduler = ReduceLROnPlateau(
             optimizer,
-            mode='max',  # Karena monitor accuracy
+            mode='min',  # Monitor val_loss (semakin kecil semakin baik)
             factor=Config.SCHEDULER_FACTOR,
             patience=Config.SCHEDULER_PATIENCE,
             verbose=True
         )
-        print(f"✅ Learning Rate Scheduler enabled (patience={Config.SCHEDULER_PATIENCE})")
+        print(f"✅ Learning Rate Scheduler enabled (monitor=val_loss, patience={Config.SCHEDULER_PATIENCE})")
 
     # --- 7. Loop Pelatihan ---
     best_val_acc = 0
@@ -464,9 +464,9 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         train_f1_macro = np.mean([train_metrics[f'class_{i}']['f1'].item() for i in range(Config.NUM_CLASSES)])
         val_f1_macro = np.mean([val_metrics[f'class_{i}']['f1'].item() for i in range(Config.NUM_CLASSES)])
 
-        # Learning Rate Scheduler Step
+        # Learning Rate Scheduler Step (monitor val_loss)
         if scheduler is not None:
-            scheduler.step(val_acc)
+            scheduler.step(avg_val_loss)
             current_lr = optimizer.param_groups[0]['lr']
         else:
             current_lr = Config.LEARNING_RATE

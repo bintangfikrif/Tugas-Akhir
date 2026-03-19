@@ -17,11 +17,13 @@ class WeightedCrossEntropyLoss(nn.Module):
     def forward(self, logits, targets):
         return F.cross_entropy(logits, targets, weight=self.weight)
 
-def compute_inverse_weight(labels, num_classes=3):
+def compute_inverse_weight(labels, num_classes=None):
     """
     Menghitung bobot menggunakan metode Inverse Class Frequency.
     Bobot = Total_Sampel / (Jumlah_Kelas * Sampel_Per_Kelas)
     """
+    if num_classes is None:
+        num_classes = Config.NUM_CLASSES
     counts = Counter(labels)
     total_samples = sum(counts.values())
     
