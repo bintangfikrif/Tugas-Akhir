@@ -21,10 +21,10 @@ class Config:
     STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
     
     # ==================== Training Parameters ====================
-    BATCH_SIZE = 16
+    BATCH_SIZE = 32
     EPOCHS = 50
     LEARNING_RATE = 1e-4  
-    WEIGHT_DECAY = 1e-3
+    WEIGHT_DECAY = 1e-2
     
     # Learning rate scheduler
     USE_SCHEDULER = True
@@ -32,7 +32,7 @@ class Config:
     SCHEDULER_FACTOR = 0.5
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 5  
+    EARLY_STOPPING_PATIENCE = 15  
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation
