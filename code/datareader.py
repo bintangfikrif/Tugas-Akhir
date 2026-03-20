@@ -139,7 +139,6 @@ class EEGDataset(Dataset):
 
         self.samples  = []
         total_windows = 0
-        SKIP_FIRST_SEC = 30  # Buang 30 detik pertama (stabilisasi)
 
         mode_str = f"{Config.NUM_CLASSES}-class"
         print(f"[{split.upper()} | {mode_str}] Mengindeks file "
@@ -160,14 +159,13 @@ class EEGDataset(Dataset):
                 raw_info     = mne.io.read_raw_edf(file_path, preload=False, verbose='error')
                 duration_sec = raw_info.times[-1]
 
-                effective_start = SKIP_FIRST_SEC
-                max_start       = duration_sec - self.window_sec
+                max_start = duration_sec - self.window_sec
 
-                if max_start <= effective_start:
+                if max_start <= 0:
                     print(f"  [SKIP] {filename}: terlalu pendek ({duration_sec:.1f}s)")
                     continue
 
-                for start in np.arange(effective_start, max_start, self.stride_sec):
+                for start in np.arange(0, max_start, self.stride_sec):
                     self.samples.append({
                         'file_path': file_path,
                         'start_sec': float(start),
@@ -515,7 +513,7 @@ if __name__ == "__main__":
         csv_path='label/labels.csv',
         fold=0, split='train', n_splits=5,
         window_sec=Config.WINDOW_SEC,
-        stride_sec=5,
+        stride_sec=Config.STRIDE_SEC,
         use_augmentation=False
     )
 
@@ -548,14 +546,23 @@ if __name__ == "__main__":
         print(f"\n  Shape signal : {sig.shape}  (channels × timesteps)")
         print(f"  Label contoh : {lab.item()} = {class_name(lab.item())}")
 
-    print("\n[VIZ] Membuat plot sinyal mentah...")
-    visualize_class_comparison(train_dataset, n_examples=2,
-                               save_path='sample_comparison.png')
+    # Visualisasi: 1 contoh sinyal EEG+EOG per kelas
+    # Jumlah kolom otomatis menyesuaikan NUM_CLASSES (2 atau 3)
+    n_classes = Config.NUM_CLASSES
+    print(f"\n[VIZ] Membuat plot sinyal — {n_classes} kelas ({mode_str})...")
+    visualize_class_comparison(
+        train_dataset,
+        n_examples=1,           # 1 contoh per kelas
+        save_path=f'sample_comparison_{n_classes}class.png'
+    )
 
     print("[VIZ] Membuat plot PSD...")
-    visualize_psd_comparison(train_dataset, n_samples_per_class=15,
-                             save_path='psd_comparison.png')
+    visualize_psd_comparison(
+        train_dataset,
+        n_samples_per_class=15,
+        save_path=f'psd_comparison_{n_classes}class.png'
+    )
 
-    print("\nSelesai. Output:")
-    print("  sample_comparison.png  — sinyal μV Alert vs Drowsy")
-    print("  psd_comparison.png     — PSD theta/alpha per channel")
+    print(f"\nSelesai. Output:")
+    print(f"  sample_comparison_{n_classes}class.png  — sinyal μV per kelas")
+    print(f"  psd_comparison_{n_classes}class.png     — PSD theta/alpha per channel")

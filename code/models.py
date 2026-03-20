@@ -41,7 +41,7 @@ class MambaDrowsinessDetector(nn.Module):
         d_state=Config.MAMBA_D_STATE,
         d_conv=Config.MAMBA_D_CONV,
         expand=Config.MAMBA_EXPAND,
-        dropout=0.5,
+        dropout=0.2,
     ):
         super(MambaDrowsinessDetector, self).__init__()
         
