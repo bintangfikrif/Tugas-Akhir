@@ -13,7 +13,7 @@ from sklearn.model_selection import GroupKFold
 from config import Config
 
 # Set random seeds untuk reproduksibilitas
-RANDOM_SEED = 2004
+RANDOM_SEED = 22
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
@@ -165,12 +165,14 @@ class EEGDataset(Dataset):
                     print(f"  [SKIP] {filename}: terlalu pendek ({duration_sec:.1f}s)")
                     continue
 
+                subject_id = filename.split('-')[0]
                 for start in np.arange(0, max_start, self.stride_sec):
                     self.samples.append({
-                        'file_path': file_path,
-                        'start_sec': float(start),
-                        'label':     label,            # raw KSS (disimpan untuk visualisasi)
-                        'class_idx': kss_to_class(label)
+                        'file_path':  file_path,
+                        'start_sec':  float(start),
+                        'label':      label,             # raw KSS (disimpan untuk visualisasi)
+                        'class_idx':  kss_to_class(label),
+                        'subject_id': subject_id
                     })
                     total_windows += 1
 
@@ -179,6 +181,44 @@ class EEGDataset(Dataset):
 
         dist = Counter(class_name(s['class_idx']) for s in self.samples)
         print(f"Total Window: {total_windows} | Distribusi: {dict(dist)}\n")
+
+        self.subject_stats = {}
+        if getattr(Config, 'NORMALIZATION', 'window') == 'subject':
+            print("[NORM] Menghitung statistik per-subjek...")
+            files_per_subject = defaultdict(set)
+            for s in self.samples:
+                files_per_subject[s['subject_id']].add(s['file_path'])
+
+            for subject_id, file_paths in files_per_subject.items():
+                sum_ch = np.zeros((Config.IN_CHANNELS, 1), dtype=np.float64)
+                sumsq_ch = np.zeros((Config.IN_CHANNELS, 1), dtype=np.float64)
+                count = 0
+
+                for fp in file_paths:
+                    try:
+                        raw = mne.io.read_raw_edf(fp, preload=True, verbose='error')
+                        raw.pick(['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H'])
+                        signal_fp = raw.get_data() * 1e6
+
+                        if getattr(Config, 'USE_BANDPASS_FILTER', True):
+                            signal_fp = apply_bandpass(signal_fp, sfreq=Config.SAMPLE_RATE)
+
+                        sum_ch += signal_fp.sum(axis=1, keepdims=True)
+                        sumsq_ch += (signal_fp ** 2).sum(axis=1, keepdims=True)
+                        count += signal_fp.shape[1]
+
+                    except Exception as e:
+                        print(f"  [NORM-ERROR] subject {subject_id} file {fp}: {e}")
+
+                if count > 0:
+                    mean = sum_ch / count
+                    var = np.maximum(sumsq_ch / count - mean ** 2, 1e-12)
+                    std = np.sqrt(var)
+                    self.subject_stats[subject_id] = (mean, std)
+                else:
+                    self.subject_stats[subject_id] = (np.zeros((Config.IN_CHANNELS, 1)), np.ones((Config.IN_CHANNELS, 1)))
+
+            print(f"[NORM] Selesai. subject_count={len(self.subject_stats)}\n")
 
     # ----------------------------------------------------------
 
@@ -201,9 +241,21 @@ class EEGDataset(Dataset):
             if getattr(Config, 'USE_BANDPASS_FILTER', True):
                 signal = apply_bandpass(signal, sfreq=Config.SAMPLE_RATE)
 
-            mean   = np.mean(signal, axis=1, keepdims=True)
-            std    = np.std(signal,  axis=1, keepdims=True)
-            signal = (signal - mean) / (std + 1e-6)  # Z-score per channel
+            norm_mode = getattr(Config, 'NORMALIZATION', 'window')
+            if norm_mode == 'subject' and hasattr(self, 'subject_stats'):
+                subject_id = info.get('subject_id', os.path.basename(file_path).split('-')[0])
+                subject_stats = self.subject_stats.get(subject_id)
+                if subject_stats is not None:
+                    mean, std = subject_stats
+                    signal = (signal - mean) / (std + 1e-6)
+                else:
+                    mean = np.mean(signal, axis=1, keepdims=True)
+                    std = np.std(signal, axis=1, keepdims=True)
+                    signal = (signal - mean) / (std + 1e-6)
+            else:
+                mean = np.mean(signal, axis=1, keepdims=True)
+                std = np.std(signal, axis=1, keepdims=True)
+                signal = (signal - mean) / (std + 1e-6)
 
             signal = torch.tensor(signal, dtype=torch.float32)
 
