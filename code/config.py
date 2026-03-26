@@ -27,7 +27,7 @@ class Config:
     BATCH_SIZE = 32
     EPOCHS = 50
     LEARNING_RATE = 1e-4  
-    WEIGHT_DECAY = 1e-2
+    WEIGHT_DECAY = 1e-3
     
     # Learning rate scheduler
     USE_SCHEDULER = True
@@ -35,7 +35,7 @@ class Config:
     SCHEDULER_FACTOR = 0.5
 
     # Warmup scheduler (untuk training stabil di awal)
-    USE_WARMUP = True
+    USE_WARMUP = False
     WARMUP_EPOCHS = 5
     WARMUP_START_FACTOR = 0.01  # lr start = base_lr * start_factor
     
@@ -53,7 +53,7 @@ class Config:
     # ==================== Data Augmentation ====================
     USE_BANDPASS_FILTER = False
     USE_AUGMENTATION = True
-    AUG_GAUSSIAN_NOISE_STD = 0.02
+    AUG_GAUSSIAN_NOISE_STD = 0.01
     AUG_AMPLITUDE_SCALE_RANGE = (0.9, 1.1)
     AUG_TIME_SHIFT_MAX = 256  # samples
 
