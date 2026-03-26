@@ -17,7 +17,10 @@ class Config:
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
     NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
     WINDOW_SEC = 30       # Window size in seconds
-    SAMPLE_RATE = 512    # Hz
+    ORIGINAL_SAMPLE_RATE = 512  # Hz
+    SAMPLE_RATE = 512    # Hz (default untuk processing; update ke target pada downsample)
+    USE_DOWNSAMPLE = True
+    DOWNSAMPLE_RATE = 128  # Hz target ketika USE_DOWNSAMPLE = True
     STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
     
     # ==================== Training Parameters ====================

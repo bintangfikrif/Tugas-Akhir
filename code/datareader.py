@@ -236,10 +236,18 @@ class EEGDataset(Dataset):
             raw.pick(['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H'])
             raw.crop(tmin=start_sec, tmax=start_sec + self.window_sec, include_tmax=False)
 
+            # Downsampling (low-pass + anti-aliasing) untuk noise reduction
+            if getattr(Config, 'USE_DOWNSAMPLE', False):
+                target_sr = Config.DOWNSAMPLE_RATE
+                source_sr = Config.ORIGINAL_SAMPLE_RATE
+                if target_sr != source_sr:
+                    raw.resample(target_sr, npad='auto')
+            current_sr = Config.DOWNSAMPLE_RATE if getattr(Config, 'USE_DOWNSAMPLE', False) else Config.ORIGINAL_SAMPLE_RATE
+
             signal = raw.get_data() * 1e6            # Volt → μV
 
             if getattr(Config, 'USE_BANDPASS_FILTER', True):
-                signal = apply_bandpass(signal, sfreq=Config.SAMPLE_RATE)
+                signal = apply_bandpass(signal, sfreq=current_sr)
 
             norm_mode = getattr(Config, 'NORMALIZATION', 'window')
             if norm_mode == 'subject' and hasattr(self, 'subject_stats'):
