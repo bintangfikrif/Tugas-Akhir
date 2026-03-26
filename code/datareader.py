@@ -550,6 +550,86 @@ def visualize_psd_comparison(dataset, n_samples_per_class=10, save_path='psd_com
 
 
 # ============================================================
+# VISUALISASI 3 — Per Label (7 channel dalam 1 file per kelas)
+# ============================================================
+
+def visualize_labelwise_channel_traces(dataset, n_samples_per_label=5, save_dir='channel_label_plots'):
+    """
+    Setiap kelas dibuatkan satu file dengan 7 subplot channel.
+    Masing-masing channel memplot beberapa sample sinyal dari kelas itu.
+
+    Args:
+        dataset: EEGDataset instance
+        n_samples_per_label: jumlah sample per kelas untuk setiap channel
+        save_dir: direktori untuk menyimpan plot
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    n_classes = Config.NUM_CLASSES
+    window_sec = dataset.window_sec
+    sr = Config.SAMPLE_RATE
+    n_ch = len(CHANNEL_NAMES)
+
+    idx_per_class = defaultdict(list)
+    for i, s in enumerate(dataset.samples):
+        idx_per_class[s['class_idx']].append(i)
+
+    t = np.linspace(0, window_sec, int(window_sec * sr))
+    colors = {0: '#1565C0', 1: '#FF6F00', 2: '#B71C1C'}
+
+    for label_idx in range(n_classes):
+        label_name = class_name(label_idx)
+        pool = idx_per_class[label_idx]
+
+        if len(pool) == 0:
+            print(f"  [SKIP] Label {label_name}: tidak ada sample")
+            continue
+
+        chosen = random.sample(pool, min(n_samples_per_label, len(pool)))
+
+        fig, axes = plt.subplots(n_ch, 1, figsize=(12, n_ch * 1.8), sharex=True)
+        if n_ch == 1:
+            axes = [axes]
+
+        for ch_idx, ch_name in enumerate(CHANNEL_NAMES):
+            ax = axes[ch_idx]
+
+            for sample_i in chosen:
+                info = dataset.samples[sample_i]
+                try:
+                    sig = _load_raw_signal(info['file_path'], info['start_sec'], window_sec)
+                    ax.plot(t, sig[ch_idx], color=colors.get(label_idx, '#424242'), alpha=0.6, linewidth=1)
+                except Exception as e:
+                    print(f"    [ERROR] Sample {sample_i} channel {ch_name}: {e}")
+
+            ax.set_ylabel(ch_name, fontsize=9, rotation=0, labelpad=40, va='center')
+            ax.grid(True, alpha=0.25)
+            ax.axhline(0, color='black', linewidth=0.6, linestyle='--')
+
+            all_y = np.concatenate([line.get_ydata() for line in ax.lines]) if ax.lines else np.array([0])
+            y_min, y_max = np.percentile(all_y, [5, 95])
+            margin = max((y_max - y_min) * 0.12, 1.0)
+            ax.set_ylim(y_min - margin, y_max + margin)
+            ax.set_yticks([])
+
+            if ch_idx == 0:
+                ax.set_title(f"Channel {ch_name} — Label {label_name} ({len(chosen)} sample)", fontsize=12, fontweight='bold')
+
+        axes[-1].set_xlabel('Time (s)', fontsize=10)
+
+        fig.suptitle(f"Per Label: {label_name} | {n_ch} channel | {len(chosen)} sample per channel", fontsize=14, fontweight='bold')
+        plt.tight_layout(rect=[0.05, 0.03, 0.98, 0.95])
+
+        save_path = os.path.join(save_dir, f'label_{label_name.replace(" ", "_")}_channel_traces.png')
+        plt.savefig(save_path, dpi=180, bbox_inches='tight')
+        plt.close(fig)
+
+        print(f"  [VIZ] Simpan: {save_path}")
+
+    print(f"  [VIZ] Selesai: {n_classes} file labelwise di {save_dir}/")
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
@@ -618,3 +698,8 @@ if __name__ == "__main__":
     print(f"\nSelesai. Output:")
     print(f"  sample_comparison_{n_classes}class.png  — sinyal μV per kelas")
     print(f"  psd_comparison_{n_classes}class.png     — PSD theta/alpha per channel")
+
+    # Generate plot per channel per label
+    print(f"\n[VIZ] Membuat plot per label (7 channel dalam 1 file per label)...")
+    visualize_labelwise_channel_traces(train_dataset, n_samples_per_label=1, save_dir='channel_label_plots')
+    print(f"  channel_label_plots/ — {n_classes} file PDF/PNG labels")
