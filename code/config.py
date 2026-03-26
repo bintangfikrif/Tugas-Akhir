@@ -27,7 +27,7 @@ class Config:
     BATCH_SIZE = 32
     EPOCHS = 50
     LEARNING_RATE = 1e-4  
-    WEIGHT_DECAY = 1e-3
+    WEIGHT_DECAY = 1e-2
     
     # Learning rate scheduler
     USE_SCHEDULER = True
@@ -40,7 +40,7 @@ class Config:
     WARMUP_START_FACTOR = 0.01  # lr start = base_lr * start_factor
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 5  
+    EARLY_STOPPING_PATIENCE = 10  
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation

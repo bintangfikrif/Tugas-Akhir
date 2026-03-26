@@ -437,7 +437,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             loss = criterion(logits, labels)
             loss.backward()
             # Gradient clipping: cegah exploding gradient
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.5)
             optimizer.step()
             
             total_train_loss += loss.item()
