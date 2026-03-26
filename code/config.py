@@ -26,8 +26,8 @@ class Config:
     # ==================== Training Parameters ====================
     BATCH_SIZE = 32
     EPOCHS = 50
-    LEARNING_RATE = 5e-5  
-    WEIGHT_DECAY = 1e-2
+    LEARNING_RATE = 5e-3  
+    WEIGHT_DECAY = 1e-3
     
     # Learning rate scheduler
     USE_SCHEDULER = True
@@ -36,11 +36,11 @@ class Config:
 
     # Warmup scheduler (untuk training stabil di awal)
     USE_WARMUP = True
-    WARMUP_EPOCHS = 10
+    WARMUP_EPOCHS = 5
     WARMUP_START_FACTOR = 0.01  # lr start = base_lr * start_factor
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 10  
+    EARLY_STOPPING_PATIENCE = 5  
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation
