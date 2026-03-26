@@ -375,16 +375,40 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     
     # TAMBAHKAN Learning Rate Scheduler 
     scheduler = None
+    use_warmup = getattr(Config, 'USE_WARMUP', False)
+    warmup_epochs = getattr(Config, 'WARMUP_EPOCHS', 0)
+    warmup_start_factor = getattr(Config, 'WARMUP_START_FACTOR', 0.1)
+
     if Config.USE_SCHEDULER:
-        from torch.optim.lr_scheduler import ReduceLROnPlateau
-        scheduler = ReduceLROnPlateau(
+        from torch.optim.lr_scheduler import ReduceLROnPlateau, LinearLR
+
+        plateau_scheduler = ReduceLROnPlateau(
             optimizer,
             mode='min',  # Monitor val_loss (semakin kecil semakin baik)
             factor=Config.SCHEDULER_FACTOR,
             patience=Config.SCHEDULER_PATIENCE,
             verbose=True
         )
-        print(f"✅ Learning Rate Scheduler enabled (monitor=val_loss, patience={Config.SCHEDULER_PATIENCE})")
+
+        if use_warmup and warmup_epochs > 0:
+            warmup_scheduler = LinearLR(
+                optimizer,
+                start_factor=warmup_start_factor,
+                end_factor=1.0,
+                total_iters=warmup_epochs
+            )
+            scheduler = {
+                'warmup': warmup_scheduler,
+                'plateau': plateau_scheduler
+            }
+            print(f"✅ Warmup enabled: {warmup_epochs} epochs, start_factor={warmup_start_factor}")
+        else:
+            scheduler = {
+                'warmup': None,
+                'plateau': plateau_scheduler
+            }
+
+        print(f"✅ Learning Rate Scheduler enabled (ReduceLROnPlateau, patience={Config.SCHEDULER_PATIENCE})")
 
     # --- 7. Loop Pelatihan ---
     best_val_acc = 0
@@ -464,9 +488,12 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         train_f1_macro = np.mean([train_metrics[f'class_{i}']['f1'].item() for i in range(Config.NUM_CLASSES)])
         val_f1_macro = np.mean([val_metrics[f'class_{i}']['f1'].item() for i in range(Config.NUM_CLASSES)])
 
-        # Learning Rate Scheduler Step (monitor val_loss)
+        # Learning Rate Scheduler Step (warmup + plateau)
         if scheduler is not None:
-            scheduler.step(avg_val_loss)
+            if scheduler['warmup'] is not None and epoch < warmup_epochs:
+                scheduler['warmup'].step()
+
+            scheduler['plateau'].step(avg_val_loss)
             current_lr = optimizer.param_groups[0]['lr']
         else:
             current_lr = Config.LEARNING_RATE
