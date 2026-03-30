@@ -371,7 +371,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     )
     
     # Focal Loss
-    criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
     
     # TAMBAHKAN Learning Rate Scheduler 
     scheduler = None
