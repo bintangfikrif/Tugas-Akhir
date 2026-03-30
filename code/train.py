@@ -337,7 +337,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     # ✅ GUNAKAN Config untuk parameter model
     model = MambaDrowsinessDetector(
         in_channels=Config.IN_CHANNELS,
-        num_classes=Config.NUM_CLASSES,
+        num_classes=1,
         d_model=Config.MAMBA_D_MODEL,
         n_layers=Config.MAMBA_N_LAYERS,
         d_state=Config.MAMBA_D_STATE,
@@ -369,9 +369,14 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         lr=Config.LEARNING_RATE,
         weight_decay=Config.WEIGHT_DECAY
     )
+
+    num_alert = (np.array(train_labels) == 0).sum()
+    num_drowsy = (np.array(train_labels) == 1).sum()
+    pos_weight = torch.tensor([num_alert / (num_drowsy + 1e-6)]).to(device)
     
     # Focal Loss
-    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    print(f"✅ Loss: BCEWithLogitsLoss | Pos Weight: {pos_weight.item():.4f}")
     
     # TAMBAHKAN Learning Rate Scheduler 
     scheduler = None
@@ -431,6 +436,8 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{Config.EPOCHS} [Train]")
         for signals, labels in pbar:
             signals, labels = signals.to(device), labels.to(device)
+
+            labels_bce = labels.unsqueeze(1).float()
             
             optimizer.zero_grad()
             logits = model(signals)
@@ -443,7 +450,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             total_train_loss += loss.item()
             
             # Simpan prediksi untuk confusion matrix
-            preds = torch.argmax(logits, dim=1)
+            preds = (logits > 0).float().squeeze(1)
             train_preds_list.append(preds.cpu())
             train_targets_list.append(labels.cpu())
             
@@ -461,11 +468,12 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             pbar_val = tqdm(val_loader, desc=f"Epoch {epoch+1}/{Config.EPOCHS} [Val]")
             for signals, labels in pbar_val:
                 signals, labels = signals.to(device), labels.to(device)
+                labels_bce = labels.unsqueeze(1).float()
                 logits = model(signals)
                 val_loss = criterion(logits, labels)
                 total_val_loss += val_loss.item()
                 
-                preds = torch.argmax(logits, dim=1)
+                preds = (logits > 0).float().squeeze(1)
                 val_preds_list.append(preds.cpu())
                 val_targets_list.append(labels.cpu())
                 
@@ -616,7 +624,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         for signals, labels in val_loader:
             signals = signals.to(device)
             logits = model(signals)
-            preds = torch.argmax(logits, dim=1)
+            preds = (logits > 0).float().squeeze(1).long()
             final_val_preds.append(preds.cpu())
             final_val_targets.append(labels.cpu())
     
