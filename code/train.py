@@ -437,7 +437,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         for signals, labels in pbar:
             signals, labels = signals.to(device), labels.to(device)
 
-            labels_bce = labels.unsqueeze(1).float()
+            labels = labels.unsqueeze(1).float()
             
             optimizer.zero_grad()
             logits = model(signals)
@@ -468,7 +468,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             pbar_val = tqdm(val_loader, desc=f"Epoch {epoch+1}/{Config.EPOCHS} [Val]")
             for signals, labels in pbar_val:
                 signals, labels = signals.to(device), labels.to(device)
-                labels_bce = labels.unsqueeze(1).float()
+                labels = labels.unsqueeze(1).float()
                 logits = model(signals)
                 val_loss = criterion(logits, labels)
                 total_val_loss += val_loss.item()
