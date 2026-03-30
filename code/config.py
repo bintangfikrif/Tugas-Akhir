@@ -59,7 +59,7 @@ class Config:
 
     # ==================== Normalization ====================
     # Options: 'window' (default), 'subject'
-    NORMALIZATION = 'subject'
+    NORMALIZATION = 'window'
     
     # ==================== Paths ====================
     DATA_DIR = "psg"
