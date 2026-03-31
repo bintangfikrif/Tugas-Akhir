@@ -19,7 +19,7 @@ class Config:
     WINDOW_SEC = 30       # Window size in seconds
     ORIGINAL_SAMPLE_RATE = 512  # Hz
     SAMPLE_RATE = 512    # Hz (default untuk processing; update ke target pada downsample)
-    USE_DOWNSAMPLE = False
+    USE_DOWNSAMPLE = True
     DOWNSAMPLE_RATE = 128  # Hz target ketika USE_DOWNSAMPLE = True
     STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
     

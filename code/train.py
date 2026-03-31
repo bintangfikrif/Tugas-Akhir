@@ -297,7 +297,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         split='val',
         n_splits=Config.N_SPLITS,
         window_sec=Config.WINDOW_SEC,
-        stride_sec=Config.STRIDE_SEC,   
+        stride_sec=Config.WINDOW_SEC,   
         use_augmentation=False          
     )
 
