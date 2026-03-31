@@ -67,7 +67,7 @@ class MambaDrowsinessDetector(nn.Module):
         
         # 2. Learnable Positional Embedding
         # Setelah downsampling 32x: 15360/32 = 480 timesteps
-        self.max_seq_len = 512  # Sedikit lebih dari 480 untuk buffer
+        self.max_seq_len = 2048  # Sedikit lebih dari 480 untuk buffer
         self.pos_encoding = nn.Parameter(
             torch.randn(1, self.max_seq_len, d_model) * 0.02
         )
