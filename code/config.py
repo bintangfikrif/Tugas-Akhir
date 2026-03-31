@@ -19,7 +19,7 @@ class Config:
     WINDOW_SEC = 30       # Window size in seconds
     ORIGINAL_SAMPLE_RATE = 512  # Hz
     SAMPLE_RATE = 512    # Hz (default untuk processing; update ke target pada downsample)
-    USE_DOWNSAMPLE = True
+    USE_DOWNSAMPLE = False
     DOWNSAMPLE_RATE = 128  # Hz target ketika USE_DOWNSAMPLE = True
     STRIDE_SEC = 10      # Sliding window stride untuk training (detik)
     
@@ -27,11 +27,11 @@ class Config:
     BATCH_SIZE = 32
     EPOCHS = 50
     LEARNING_RATE = 1e-4  
-    WEIGHT_DECAY = 1e-2
+    WEIGHT_DECAY = 5e-2
     
     # Learning rate scheduler
     USE_SCHEDULER = True
-    SCHEDULER_PATIENCE = 5   
+    SCHEDULER_PATIENCE = 3   
     SCHEDULER_FACTOR = 0.5
 
     # Warmup scheduler (untuk training stabil di awal)
