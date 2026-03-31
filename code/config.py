@@ -27,7 +27,7 @@ class Config:
     BATCH_SIZE = 32
     EPOCHS = 50
     LEARNING_RATE = 1e-4  
-    WEIGHT_DECAY = 5e-2
+    WEIGHT_DECAY = 1e-2
     
     # Learning rate scheduler
     USE_SCHEDULER = True
@@ -52,7 +52,7 @@ class Config:
     
     # ==================== Data Augmentation ====================
     USE_BANDPASS_FILTER = False
-    USE_AUGMENTATION = True
+    USE_AUGMENTATION = False
     AUG_GAUSSIAN_NOISE_STD = 0.01
     AUG_AMPLITUDE_SCALE_RANGE = (0.9, 1.1)
     AUG_TIME_SHIFT_MAX = 256  # samples

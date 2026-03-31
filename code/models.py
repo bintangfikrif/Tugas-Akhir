@@ -56,18 +56,18 @@ class MambaDrowsinessDetector(nn.Module):
         half_d = d_model // 2
         self.input_projection = nn.Sequential(
             # Stage 1: Tangkap fitur lokal EEG (alpha/theta butuh kernel >= 16 samples)
-            nn.Conv1d(in_channels, half_d, kernel_size=16, stride=4, padding=4, bias=False),
+            nn.Conv1d(in_channels, half_d, kernel_size=16, stride=8, padding=4, bias=False),
             nn.BatchNorm1d(half_d),
             nn.GELU(),
             # Stage 2: Lanjutkan downsampling, perluas ke d_model
-            nn.Conv1d(half_d, d_model, kernel_size=8, stride=2, padding=2, bias=False),
+            nn.Conv1d(half_d, d_model, kernel_size=8, stride=4, padding=2, bias=False),
             nn.BatchNorm1d(d_model),
             nn.GELU(),
         )
         
         # 2. Learnable Positional Embedding
         # Setelah downsampling 32x: 15360/32 = 480 timesteps
-        self.max_seq_len = 2048  # Sedikit lebih dari 480 untuk buffer
+        self.max_seq_len = 512  # Sedikit lebih dari 480 untuk buffer
         self.pos_encoding = nn.Parameter(
             torch.randn(1, self.max_seq_len, d_model) * 0.02
         )
