@@ -56,11 +56,11 @@ class MambaDrowsinessDetector(nn.Module):
         half_d = d_model // 2
         self.input_projection = nn.Sequential(
             # Stage 1: Tangkap fitur lokal EEG (alpha/theta butuh kernel >= 16 samples)
-            nn.Conv1d(in_channels, half_d, kernel_size=16, stride=8, padding=4, bias=False),
+            nn.Conv1d(in_channels, half_d, kernel_size=16, stride=4, padding=4, bias=False),
             nn.BatchNorm1d(half_d),
             nn.GELU(),
             # Stage 2: Lanjutkan downsampling, perluas ke d_model
-            nn.Conv1d(half_d, d_model, kernel_size=8, stride=4, padding=2, bias=False),
+            nn.Conv1d(half_d, d_model, kernel_size=8, stride=2, padding=2, bias=False),
             nn.BatchNorm1d(d_model),
             nn.GELU(),
         )
@@ -88,7 +88,7 @@ class MambaDrowsinessDetector(nn.Module):
             nn.Linear(d_model, d_model // 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model // 2, 1)
+            nn.Linear(d_model // 2, num_classes)
         )
 
     def forward(self, x):

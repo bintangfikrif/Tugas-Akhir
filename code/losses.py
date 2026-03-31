@@ -36,22 +36,13 @@ def compute_inverse_weight(labels, num_classes=None):
     return torch.tensor(weights, dtype=torch.float32)
 
 def get_evaluation_metrics(predictions, targets):
-    """
-    Disesuaikan untuk mendukung output BCE (Binary) 
-    maupun CrossEntropy (Categorical).
-    """
-    # Pastikan tipe data sama untuk perbandingan
-    predictions = predictions.to(targets.device).float()
-    targets = targets.float()
-
-    # Accuracy: (Prediksi == Target)
-    # Untuk BCE, predictions sudah berupa 0.0 atau 1.0 dari logic (logits > 0)
+    # Accuracy: (TP + TN) / Total
     acc = (predictions == targets).float().mean()
     
+    # Per-class metrics menggunakan rata-rata makro
+    # Cocok untuk data tidak seimbang 
     metrics = {}
-    # Loop sesuai jumlah kelas (2 untuk biner)
     for cls in range(Config.NUM_CLASSES):
-        # Filter sampel yang termasuk kelas 'cls'
         tp = ((predictions == cls) & (targets == cls)).sum().float()
         fp = ((predictions == cls) & (targets != cls)).sum().float()
         fn = ((predictions != cls) & (targets == cls)).sum().float()
