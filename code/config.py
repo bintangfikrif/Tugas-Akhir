@@ -15,7 +15,7 @@ class Config:
     
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
-    # NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
+    NUM_CLASSES = 2       # Used for auxiliary evaluation / visualization only
     OUTPUT_DIM = 1
     WINDOW_SEC = 30       # Window size in seconds
     ORIGINAL_SAMPLE_RATE = 512  # Hz
