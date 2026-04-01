@@ -72,6 +72,14 @@ def class_name(class_idx: int) -> str:
     else:
         return ['Alert', 'Low Vigilance', 'Drowsy'][class_idx]
 
+def kss_to_float(kss: int) -> float:
+    """Mengembalikan nilai KSS asli sebagai float untuk regresi."""
+    return float(kss)
+
+def get_binary_label(kss: int) -> int:
+    """Hanya digunakan untuk hitung akurasi semu (Thresholding)."""
+    # Threshold 5.5: 1-5 Alert (0), 6-9 Drowsy (1)
+    return 0 if kss <= 5 else 1
 
 # ============================================================
 # AUGMENTASI EEG
@@ -229,26 +237,26 @@ class EEGDataset(Dataset):
         info      = self.samples[idx]
         file_path = info['file_path']
         start_sec = info['start_sec']
-        class_idx = info['class_idx']
+        # info['label'] sekarang kita perlakukan sebagai skor KSS murni (1-9)
 
         try:
             raw = mne.io.read_raw_edf(file_path, preload=True, verbose='error')
             raw.pick(['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H'])
             raw.crop(tmin=start_sec, tmax=start_sec + self.window_sec, include_tmax=False)
 
-            # Downsampling (low-pass + anti-aliasing) untuk noise reduction
+            # Downsampling (tetap sama sesuai Config lo)
             if getattr(Config, 'USE_DOWNSAMPLE', False):
                 target_sr = Config.DOWNSAMPLE_RATE
-                source_sr = Config.ORIGINAL_SAMPLE_RATE
-                if target_sr != source_sr:
+                if target_sr != Config.ORIGINAL_SAMPLE_RATE:
                     raw.resample(target_sr, npad='auto')
+            
             current_sr = Config.DOWNSAMPLE_RATE if getattr(Config, 'USE_DOWNSAMPLE', False) else Config.ORIGINAL_SAMPLE_RATE
-
-            signal = raw.get_data() * 1e6            # Volt → μV
+            signal = raw.get_data() * 1e6 # Volt -> μV
 
             if getattr(Config, 'USE_BANDPASS_FILTER', True):
                 signal = apply_bandpass(signal, sfreq=current_sr)
 
+            # Normalisasi Sinyal (Subject/Window) tetap sama
             norm_mode = getattr(Config, 'NORMALIZATION', 'window')
             if norm_mode == 'subject' and hasattr(self, 'subject_stats'):
                 subject_id = info.get('subject_id', os.path.basename(file_path).split('-')[0])
@@ -257,27 +265,34 @@ class EEGDataset(Dataset):
                     mean, std = subject_stats
                     signal = (signal - mean) / (std + 1e-6)
                 else:
-                    mean = np.mean(signal, axis=1, keepdims=True)
-                    std = np.std(signal, axis=1, keepdims=True)
-                    signal = (signal - mean) / (std + 1e-6)
+                    signal = (signal - np.mean(signal, axis=1, keepdims=True)) / (np.std(signal, axis=1, keepdims=True) + 1e-6)
             else:
-                mean = np.mean(signal, axis=1, keepdims=True)
-                std = np.std(signal, axis=1, keepdims=True)
-                signal = (signal - mean) / (std + 1e-6)
+                signal = (signal - np.mean(signal, axis=1, keepdims=True)) / (np.std(signal, axis=1, keepdims=True) + 1e-6)
 
             signal = torch.tensor(signal, dtype=torch.float32)
 
             if self.use_augmentation:
-                aug    = EEGAugmentation()
+                aug = EEGAugmentation() # Pake parameter dari Config lo
                 signal = aug.add_gaussian_noise(signal)
                 signal = aug.amplitude_scaling(signal)
 
-            return signal, torch.tensor(class_idx, dtype=torch.long)
+            # ============================================================
+            # PERUBAHAN UTAMA: LABEL UNTUK REGRESI
+            # ============================================================
+            kss_raw = float(info['label']) # Ambil skor KSS 1-9
+            
+            # Normalisasi Label ke 0.1 - 1.0 supaya Mamba stabil
+            # (Misal: KSS 9 jadi 1.0, KSS 1 jadi 0.11)
+            normalized_kss = kss_raw / Config.KSS_MAX 
 
-        except Exception:
-            dummy_len = int(self.window_sec * Config.SAMPLE_RATE)
-            return (torch.zeros((Config.IN_CHANNELS, dummy_len)),
-                    torch.tensor(0, dtype=torch.long))
+            # Return sebagai float tensor dengan shape (1,) agar match dengan model (Batch, 1)
+            return signal, torch.tensor([normalized_kss], dtype=torch.float32)
+
+        except Exception as e:
+            # Handle error dengan dummy tensor float
+            dummy_len = int(self.window_sec * (Config.DOWNSAMPLE_RATE if Config.USE_DOWNSAMPLE else Config.ORIGINAL_SAMPLE_RATE))
+            return (torch.zeros((Config.IN_CHANNELS, dummy_len)), 
+                    torch.tensor([0.0], dtype=torch.float32))
 
 
 # ============================================================

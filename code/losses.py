@@ -16,6 +16,15 @@ class WeightedCrossEntropyLoss(nn.Module):
         
     def forward(self, logits, targets):
         return F.cross_entropy(logits, targets, weight=self.weight)
+    
+class MAELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.criterion = nn.L1Loss() # MAE Loss
+        
+    def forward(self, predictions, targets):
+        # Pastikan tipe datanya float32 untuk regresi
+        return self.criterion(predictions, targets)
 
 def compute_inverse_weight(labels, num_classes=None):
     """
@@ -35,21 +44,56 @@ def compute_inverse_weight(labels, num_classes=None):
         
     return torch.tensor(weights, dtype=torch.float32)
 
-def get_evaluation_metrics(predictions, targets):
-    # Accuracy: (TP + TN) / Total
-    acc = (predictions == targets).float().mean()
+def compute_regression_metrics(predictions, targets):
+    # Balikkan ke skala KSS asli (1-9) sebelum dihitung
+    # Karena tadi di datareader kita bagi 9.0 (Config.KSS_MAX)
+    preds_kss = predictions * Config.KSS_MAX
+    targets_kss = targets * Config.KSS_MAX
     
-    # Per-class metrics menggunakan rata-rata makro
-    # Cocok untuk data tidak seimbang 
-    metrics = {}
-    for cls in range(Config.NUM_CLASSES):
-        tp = ((predictions == cls) & (targets == cls)).sum().float()
-        fp = ((predictions == cls) & (targets != cls)).sum().float()
-        fn = ((predictions != cls) & (targets == cls)).sum().float()
+    # Hitung MAE (Mean Absolute Error)
+    mae = torch.mean(torch.abs(preds_kss - targets_kss))
+    
+    # Hitung RMSE (Root Mean Squared Error)
+    mse = torch.mean((preds_kss - targets_kss)**2)
+    rmse = torch.sqrt(mse)
+    
+    return mae.item(), rmse.item()
+
+# def get_evaluation_metrics(predictions, targets):
+#     # Accuracy: (TP + TN) / Total
+#     acc = (predictions == targets).float().mean()
+    
+#     # Per-class metrics menggunakan rata-rata makro
+#     # Cocok untuk data tidak seimbang 
+#     metrics = {}
+#     for cls in range(Config.NUM_CLASSES):
+#         tp = ((predictions == cls) & (targets == cls)).sum().float()
+#         fp = ((predictions == cls) & (targets != cls)).sum().float()
+#         fn = ((predictions != cls) & (targets == cls)).sum().float()
         
-        precision = tp / (tp + fp + 1e-6) 
-        recall = tp / (tp + fn + 1e-6)   
-        f1 = 2 * (precision * recall) / (precision + recall + 1e-6) 
-        metrics[f'class_{cls}'] = {'p': precision, 'r': recall, 'f1': f1}
+#         precision = tp / (tp + fp + 1e-6) 
+#         recall = tp / (tp + fn + 1e-6)   
+#         f1 = 2 * (precision * recall) / (precision + recall + 1e-6) 
+#         metrics[f'class_{cls}'] = {'p': precision, 'r': recall, 'f1': f1}
         
-    return acc, metrics
+#     return acc, metrics
+
+def get_classification_stats(predictions, targets, threshold=5.5):
+    """
+    Mengubah hasil regresi kembali ke biner untuk hitung akurasi/confusion matrix.
+    Threshold 5.5: <= 5.5 Alert (0), > 5.5 Drowsy (1)
+    """
+    # Balikkan ke skala 1-9
+    preds_kss = predictions * Config.KSS_MAX
+    targets_kss = targets * Config.KSS_MAX
+    
+    # Thresholding menjadi biner (0 atau 1)
+    preds_binary = (preds_kss > threshold).long()
+    targets_binary = (targets_kss > threshold).long()
+    
+    # Hitung akurasi sederhana
+    correct = (preds_binary == targets_binary).sum().item()
+    total = targets_binary.size(0)
+    acc = correct / total
+    
+    return acc, preds_binary, targets_binary

@@ -15,7 +15,8 @@ class Config:
     
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
-    NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
+    # NUM_CLASSES = 2      # 2-class: Alert(0) vs Drowsy(1)
+    OUTPUT_DIM = 1
     WINDOW_SEC = 30       # Window size in seconds
     ORIGINAL_SAMPLE_RATE = 512  # Hz
     SAMPLE_RATE = 512    # Hz (default untuk processing; update ke target pada downsample)
@@ -28,6 +29,7 @@ class Config:
     EPOCHS = 50
     LEARNING_RATE = 1e-4  
     WEIGHT_DECAY = 1e-2
+    KSS_MAX = 9.0
     
     # Learning rate scheduler
     USE_SCHEDULER = True
@@ -47,12 +49,12 @@ class Config:
     CURRENT_FOLD = 0
     
     # ==================== Loss Function ====================
-    LOSS_TYPE = "ce"  # "ordinal" or "ce" (cross-entropy)
+    LOSS_TYPE = "mae"  # "ordinal" or "ce" (cross-entropy)
     ORDINAL_IMPORTANCE = 1.0  # Weight for ordinal loss
     
     # ==================== Data Augmentation ====================
     USE_BANDPASS_FILTER = False
-    USE_AUGMENTATION = False
+    USE_AUGMENTATION = True
     AUG_GAUSSIAN_NOISE_STD = 0.01
     AUG_AMPLITUDE_SCALE_RANGE = (0.9, 1.1)
     AUG_TIME_SHIFT_MAX = 256  # samples
