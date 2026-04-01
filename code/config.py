@@ -27,7 +27,7 @@ class Config:
     # ==================== Training Parameters ====================
     BATCH_SIZE = 32
     EPOCHS = 50
-    LEARNING_RATE = 1e-5  
+    LEARNING_RATE = 1e-4  
     WEIGHT_DECAY = 1e-2
     KSS_MAX = 9.0
     
