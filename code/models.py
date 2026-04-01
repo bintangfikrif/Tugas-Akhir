@@ -35,7 +35,7 @@ class MambaDrowsinessDetector(nn.Module):
     def __init__(
         self,
         in_channels=Config.IN_CHANNELS,
-        num_classes=Config.NUM_CLASSES, 
+        num_classes=Config.OUTPUT_DIM, 
         d_model=Config.MAMBA_D_MODEL,
         n_layers=Config.MAMBA_N_LAYERS,    
         d_state=Config.MAMBA_D_STATE,
@@ -88,7 +88,7 @@ class MambaDrowsinessDetector(nn.Module):
             nn.Linear(d_model, d_model // 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model // 2, Config.OUTPUT_DIM)
+            nn.Linear(d_model // 2, num_classes)
         )
 
     def forward(self, x):
