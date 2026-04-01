@@ -186,7 +186,21 @@ def train(fold=0):
         if scheduler: scheduler.step(avg_val_loss)
 
         if Config.USE_WANDB:
-            wandb.log({"epoch": epoch+1, "val/mae": val_mae, "val/rmse": val_rmse, "val/accuracy_semu": val_acc, "lr": optimizer.param_groups[0]['lr']})
+            # FILTERING LEBIH KETAT: 
+            # Cuma ambil variabel yang isinya angka, string, atau list (JSON friendly)
+            raw_config = Config.to_dict()
+            clean_config = {}
+            for k, v in raw_config.items():
+                # Cek apakah value-nya bukan fungsi, bukan classmethod, dan bisa di-serialize
+                if not callable(v) and not isinstance(v, (classmethod, staticmethod)):
+                    clean_config[k] = v
+
+            wandb.init(
+                project=Config.WANDB_PROJECT, 
+                name=f"Reg_Fold_{current_fold}", 
+                config=clean_config, 
+                reinit=True
+            )
 
         print(f"\n📊 Epoch {epoch+1} Summary: MAE: {val_mae:.4f} | RMSE: {val_rmse:.4f} | Acc Semu: {val_acc:.4f}")
 
