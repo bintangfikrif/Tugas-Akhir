@@ -8,7 +8,7 @@ class Config:
     
     # Mamba specific parameters
     MAMBA_D_MODEL = 32   # Naikkan kapasitas (dari 32)
-    MAMBA_N_LAYERS = 2   # Number of Mamba layers
+    MAMBA_N_LAYERS = 4   # Number of Mamba layers
     MAMBA_D_STATE = 16   # SSM state expansion factor
     MAMBA_D_CONV = 4     # Local convolution width
     MAMBA_EXPAND = 2     # Block expansion factor
@@ -27,7 +27,7 @@ class Config:
     # ==================== Training Parameters ====================
     BATCH_SIZE = 32
     EPOCHS = 50
-    LEARNING_RATE = 1e-4  
+    LEARNING_RATE = 1e-5  
     WEIGHT_DECAY = 1e-2
     KSS_MAX = 9.0
     
@@ -42,7 +42,7 @@ class Config:
     WARMUP_START_FACTOR = 0.01  # lr start = base_lr * start_factor
     
     # Early stopping
-    EARLY_STOPPING_PATIENCE = 15  
+    EARLY_STOPPING_PATIENCE = 10  
     
     # ==================== Cross Validation ====================
     N_SPLITS = 5         # 5-fold cross validation
