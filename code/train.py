@@ -471,6 +471,20 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         train_acc, train_preds_binary, train_targets_binary = get_classification_stats(train_preds, train_targets)
         val_acc, val_preds_binary, val_targets_binary = get_classification_stats(val_preds, val_targets)
+
+        # Binary F1 from thresholded regression output
+        def compute_binary_f1(preds, targets):
+            tp = ((preds == 1) & (targets == 1)).sum().item()
+            fp = ((preds == 1) & (targets == 0)).sum().item()
+            fn = ((preds == 0) & (targets == 1)).sum().item()
+            if tp == 0:
+                return 0.0
+            precision = tp / (tp + fp + 1e-12)
+            recall = tp / (tp + fn + 1e-12)
+            return 2 * precision * recall / (precision + recall + 1e-12)
+
+        train_f1 = compute_binary_f1(train_preds_binary, train_targets_binary)
+        val_f1 = compute_binary_f1(val_preds_binary, val_targets_binary)
         
         avg_train_loss = total_train_loss / len(train_loader)
         avg_val_loss = total_val_loss / len(val_loader)
@@ -495,10 +509,12 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             "train/mae": train_mae,
             "train/rmse": train_rmse,
             "train/accuracy_threshold": train_acc,
+            "train/f1_threshold": train_f1,
             "val/loss": avg_val_loss,
             "val/mae": val_mae,
             "val/rmse": val_rmse,
             "val/accuracy_threshold": val_acc,
+            "val/f1_threshold": val_f1,
         }
 
         if Config.USE_WANDB:
@@ -506,8 +522,8 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         # Print hasil epoch
         print(f"\n📊 Epoch {epoch+1}/{Config.EPOCHS} Summary:")
-        print(f"   Train - Loss: {avg_train_loss:.4f} | MAE: {train_mae:.4f} | RMSE: {train_rmse:.4f} | Acc(threshold): {train_acc:.4f}")
-        print(f"   Val   - Loss: {avg_val_loss:.4f} | MAE: {val_mae:.4f} | RMSE: {val_rmse:.4f} | Acc(threshold): {val_acc:.4f}")
+        print(f"   Train - Loss: {avg_train_loss:.4f} | MAE: {train_mae:.4f} | RMSE: {train_rmse:.4f} | Acc(threshold): {train_acc:.4f} | F1(threshold): {train_f1:.4f}")
+        print(f"   Val   - Loss: {avg_val_loss:.4f} | MAE: {val_mae:.4f} | RMSE: {val_rmse:.4f} | Acc(threshold): {val_acc:.4f} | F1(threshold): {val_f1:.4f}")
         print(f"   LR: {current_lr:.2e}")
 
         # ========================================
