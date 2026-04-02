@@ -276,17 +276,16 @@ class EEGDataset(Dataset):
                 signal = aug.add_gaussian_noise(signal)
                 signal = aug.amplitude_scaling(signal)
 
-            # ============================================================
-            # PERUBAHAN UTAMA: LABEL UNTUK REGRESI
-            # ============================================================
-            kss_raw = float(info['label']) # Ambil skor KSS 1-9
-            
-            # Normalisasi Label ke 0.1 - 1.0 supaya Mamba stabil
-            # (Misal: KSS 9 jadi 1.0, KSS 1 jadi 0.11)
-            normalized_kss = kss_raw / Config.KSS_MAX 
+            task_type = getattr(Config, 'TASK_TYPE', 'regression').lower()
 
-            # Return sebagai float tensor dengan shape (1,) agar match dengan model (Batch, 1)
-            return signal, torch.tensor([normalized_kss], dtype=torch.float32)
+            if task_type == 'classification':
+                label = info['class_idx']
+                return signal, torch.tensor(label, dtype=torch.long)
+            else:
+                # REGRESSION: Label tetap skor KSS dinormalisasi ke 0-1
+                kss_raw = float(info['label']) # Ambil skor KSS 1-9
+                normalized_kss = kss_raw / Config.KSS_MAX
+                return signal, torch.tensor([normalized_kss], dtype=torch.float32)
 
         except Exception as e:
             # Handle error dengan dummy tensor float

@@ -13,7 +13,7 @@ from sklearn.metrics import confusion_matrix
 # Mengimpor modul kustom yang telah disesuaikan dengan proposal
 from datareader import EEGDataset, collate_fn
 from models import MambaDrowsinessDetector
-from losses import MAELoss, compute_regression_metrics, get_classification_stats
+from losses import MAELoss, WeightedCrossEntropyLoss, compute_inverse_weight, compute_regression_metrics, get_classification_stats
 from config import Config
 
 def evaluate_model_complexity(model, device, input_shape=(1, 7, 15360)):
@@ -275,7 +275,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
         wandb.init(
             project=Config.WANDB_PROJECT,
-            name=f"fold_{current_fold}_regression",
+            name=f"fold_{current_fold}_{Config.TASK_TYPE}",
             config=clean_config,
             reinit=True
         )
@@ -328,7 +328,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     # ✅ GUNAKAN Config untuk parameter model
     model = MambaDrowsinessDetector(
         in_channels=Config.IN_CHANNELS,
-        num_classes=Config.OUTPUT_DIM,
+        num_classes=Config.get_output_dim(),
         d_model=Config.MAMBA_D_MODEL,
         n_layers=Config.MAMBA_N_LAYERS,
         d_state=Config.MAMBA_D_STATE,
@@ -361,7 +361,11 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         weight_decay=Config.WEIGHT_DECAY
     )
     
-    criterion = MAELoss()
+    if Config.is_classification():
+        class_weights = compute_inverse_weight([sample['class_idx'] for sample in train_dataset.samples], num_classes=Config.NUM_CLASSES)
+        criterion = WeightedCrossEntropyLoss(weight=class_weights.to(device))
+    else:
+        criterion = MAELoss()
     
     # TAMBAHKAN Learning Rate Scheduler
     scheduler = None
@@ -401,8 +405,16 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         print(f"✅ Learning Rate Scheduler enabled (ReduceLROnPlateau, patience={Config.SCHEDULER_PATIENCE})")
 
     # --- 7. Loop Pelatihan ---
-    best_val_mae = float('inf')
-    best_val_rmse = float('inf')
+    if Config.is_classification():
+        best_val_acc = 0.0
+        best_val_f1 = 0.0
+        best_val_mae = None
+        best_val_rmse = None
+    else:
+        best_val_mae = float('inf')
+        best_val_rmse = float('inf')
+        best_val_acc = None
+        best_val_f1 = None
     patience_counter = 0  # Untuk early stopping
     
     print("\n" + "="*60)
@@ -432,7 +444,10 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             
             total_train_loss += loss.item()
             
-            train_preds_list.append(outputs.detach().cpu())
+            if Config.is_classification():
+                train_preds_list.append(torch.argmax(outputs, dim=-1).detach().cpu())
+            else:
+                train_preds_list.append(outputs.detach().cpu())
             train_targets_list.append(labels.detach().cpu())
             
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
@@ -453,7 +468,10 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
                 val_loss = criterion(outputs, labels)
                 total_val_loss += val_loss.item()
                 
-                val_preds_list.append(outputs.detach().cpu())
+                if Config.is_classification():
+                    val_preds_list.append(torch.argmax(outputs, dim=-1).detach().cpu())
+                else:
+                    val_preds_list.append(outputs.detach().cpu())
                 val_targets_list.append(labels.detach().cpu())
                 
                 pbar_val.set_postfix({"loss": f"{val_loss.item():.4f}"})
@@ -461,31 +479,63 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         # ========================================
         # PERHITUNGAN METRIK
         # ========================================
-        train_preds = torch.cat(train_preds_list).squeeze(-1)
-        train_targets = torch.cat(train_targets_list).squeeze(-1)
-        val_preds = torch.cat(val_preds_list).squeeze(-1)
-        val_targets = torch.cat(val_targets_list).squeeze(-1)
+        train_preds = torch.cat(train_preds_list)
+        train_targets = torch.cat(train_targets_list)
+        val_preds = torch.cat(val_preds_list)
+        val_targets = torch.cat(val_targets_list)
         
-        train_mae, train_rmse = compute_regression_metrics(train_preds, train_targets)
-        val_mae, val_rmse = compute_regression_metrics(val_preds, val_targets)
+        if Config.is_classification():
+            train_acc = (train_preds == train_targets).float().mean().item()
+            val_acc = (val_preds == val_targets).float().mean().item()
 
-        train_acc, train_preds_binary, train_targets_binary = get_classification_stats(train_preds, train_targets)
-        val_acc, val_preds_binary, val_targets_binary = get_classification_stats(val_preds, val_targets)
+            # Compute F1 manually for binary or multiclass
+            def compute_f1(preds, targets, num_classes):
+                f1_scores = []
+                for cls in range(num_classes):
+                    tp = ((preds == cls) & (targets == cls)).sum().item()
+                    fp = ((preds == cls) & (targets != cls)).sum().item()
+                    fn = ((preds != cls) & (targets == cls)).sum().item()
+                    if tp == 0:
+                        f1_scores.append(0.0)
+                        continue
+                    precision = tp / (tp + fp + 1e-12)
+                    recall = tp / (tp + fn + 1e-12)
+                    f1_scores.append(2 * precision * recall / (precision + recall + 1e-12))
+                return sum(f1_scores) / len(f1_scores)
 
-        # Binary F1 from thresholded regression output
-        def compute_binary_f1(preds, targets):
-            tp = ((preds == 1) & (targets == 1)).sum().item()
-            fp = ((preds == 1) & (targets == 0)).sum().item()
-            fn = ((preds == 0) & (targets == 1)).sum().item()
-            if tp == 0:
-                return 0.0
-            precision = tp / (tp + fp + 1e-12)
-            recall = tp / (tp + fn + 1e-12)
-            return 2 * precision * recall / (precision + recall + 1e-12)
+            train_f1 = compute_f1(train_preds, train_targets, Config.NUM_CLASSES)
+            val_f1 = compute_f1(val_preds, val_targets, Config.NUM_CLASSES)
 
-        train_f1 = compute_binary_f1(train_preds_binary, train_targets_binary)
-        val_f1 = compute_binary_f1(val_preds_binary, val_targets_binary)
-        
+            train_mae, train_rmse = 0.0, 0.0
+            val_mae, val_rmse = 0.0, 0.0
+            train_preds_binary, train_targets_binary = train_preds, train_targets
+            val_preds_binary, val_targets_binary = val_preds, val_targets
+        else:
+            train_preds = train_preds.squeeze(-1)
+            train_targets = train_targets.squeeze(-1)
+            val_preds = val_preds.squeeze(-1)
+            val_targets = val_targets.squeeze(-1)
+
+            train_mae, train_rmse = compute_regression_metrics(train_preds, train_targets)
+            val_mae, val_rmse = compute_regression_metrics(val_preds, val_targets)
+
+            train_acc, train_preds_binary, train_targets_binary = get_classification_stats(train_preds, train_targets)
+            val_acc, val_preds_binary, val_targets_binary = get_classification_stats(val_preds, val_targets)
+
+            # Binary F1 from thresholded regression output
+            def compute_binary_f1(preds, targets):
+                tp = ((preds == 1) & (targets == 1)).sum().item()
+                fp = ((preds == 1) & (targets == 0)).sum().item()
+                fn = ((preds == 0) & (targets == 1)).sum().item()
+                if tp == 0:
+                    return 0.0
+                precision = tp / (tp + fp + 1e-12)
+                recall = tp / (tp + fn + 1e-12)
+                return 2 * precision * recall / (precision + recall + 1e-12)
+
+            train_f1 = compute_binary_f1(train_preds_binary, train_targets_binary)
+            val_f1 = compute_binary_f1(val_preds_binary, val_targets_binary)
+
         avg_train_loss = total_train_loss / len(train_loader)
         avg_val_loss = total_val_loss / len(val_loader)
 
@@ -531,57 +581,99 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         # ========================================
         if (epoch + 1) % cm_save_interval == 0 or epoch == Config.EPOCHS - 1:
             print(f"\n📈 Generating Confusion Matrix...")
-            
+
+            if Config.is_classification():
+                if Config.NUM_CLASSES == 2:
+                    class_names = ['Alert', 'Drowsy']
+                    labels = [0, 1]
+                else:
+                    class_names = ['Alert', 'Low Vigilance', 'Drowsy']
+                    labels = [0, 1, 2]
+            else:
+                class_names = ['Alert', 'Drowsy']
+                labels = [0, 1]
+
             train_cm = plot_confusion_matrix(
                 train_targets_binary, train_preds_binary,
                 epoch=epoch+1, fold=current_fold,
                 phase='train', save_dir=cm_save_dir,
-                class_names=['Alert', 'Drowsy'], labels=[0, 1]
+                class_names=class_names, labels=labels
             )
             
             val_cm = plot_confusion_matrix(
                 val_targets_binary, val_preds_binary,
                 epoch=epoch+1, fold=current_fold,
                 phase='val', save_dir=cm_save_dir,
-                class_names=['Alert', 'Drowsy'], labels=[0, 1]
+                class_names=class_names, labels=labels
             )
             
             print(f"\n📋 Validation Set Classification Report:")
-            val_class_metrics = print_classification_report(val_cm, class_names=['Alert', 'Drowsy'])
+            val_class_metrics = print_classification_report(val_cm, class_names=class_names)
 
         # ========================================
         # SIMPAN MODEL TERBAIK & EARLY STOPPING
         # ========================================
-        if val_mae < best_val_mae:
-            best_val_mae = val_mae
-            best_val_rmse = val_rmse
-            patience_counter = 0  # ✅ Reset counter
-            
-            if Config.SAVE_BEST_ONLY:
-                model_name = f"best_mamba_fold{current_fold}.pt"
-                raw_config = Config.to_dict()
-                clean_config = {
-                    k: v for k, v in raw_config.items() 
-                    if not isinstance(v, (classmethod, staticmethod)) and not callable(v)
-                }
-                checkpoint = {
-                    'epoch': epoch + 1,
-                    'fold': current_fold,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'val_mae': val_mae,
-                    'val_rmse': val_rmse,
-                    'config': clean_config
-                }
+        if Config.is_classification():
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                best_val_f1 = val_f1
+                patience_counter = 0  # ✅ Reset counter
                 
-                torch.save(checkpoint, model_name)
-                if Config.USE_WANDB:
-                    wandb.save(model_name)
-                
-                print(f"\n✅ Model terbaik disimpan: {model_name}")
-                print(f"   └─ Val MAE: {val_mae:.4f} | Val RMSE: {val_rmse:.4f}\n")
+                if Config.SAVE_BEST_ONLY:
+                    model_name = f"best_mamba_fold{current_fold}.pt"
+                    raw_config = Config.to_dict()
+                    clean_config = {
+                        k: v for k, v in raw_config.items() 
+                        if not isinstance(v, (classmethod, staticmethod)) and not callable(v)
+                    }
+                    checkpoint = {
+                        'epoch': epoch + 1,
+                        'fold': current_fold,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'val_acc': val_acc,
+                        'val_f1': val_f1,
+                        'config': clean_config
+                    }
+                    torch.save(checkpoint, model_name)
+                    if Config.USE_WANDB:
+                        wandb.save(model_name)
+                    
+                    print(f"\n✅ Model terbaik disimpan: {model_name}")
+                    print(f"   └─ Val Acc: {val_acc:.4f} | Val F1: {val_f1:.4f}\n")
+            else:
+                patience_counter += 1  # ✅ Increment counter
         else:
-            patience_counter += 1  # ✅ Increment counter
+            if val_mae < best_val_mae:
+                best_val_mae = val_mae
+                best_val_rmse = val_rmse
+                patience_counter = 0  # ✅ Reset counter
+                
+                if Config.SAVE_BEST_ONLY:
+                    model_name = f"best_mamba_fold{current_fold}.pt"
+                    raw_config = Config.to_dict()
+                    clean_config = {
+                        k: v for k, v in raw_config.items() 
+                        if not isinstance(v, (classmethod, staticmethod)) and not callable(v)
+                    }
+                    checkpoint = {
+                        'epoch': epoch + 1,
+                        'fold': current_fold,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'val_mae': val_mae,
+                        'val_rmse': val_rmse,
+                        'config': clean_config
+                    }
+                    
+                    torch.save(checkpoint, model_name)
+                    if Config.USE_WANDB:
+                        wandb.save(model_name)
+                    
+                    print(f"\n✅ Model terbaik disimpan: {model_name}")
+                    print(f"   └─ Val MAE: {val_mae:.4f} | Val RMSE: {val_rmse:.4f}\n")
+            else:
+                patience_counter += 1  # ✅ Increment counter
         
         # Early Stopping Check
         if patience_counter >= Config.EARLY_STOPPING_PATIENCE:
@@ -595,13 +687,21 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     print("\n" + "="*60)
     print("🏁 PELATIHAN SELESAI")
     print("="*60)
-    print(f"✅ Best Validation MAE: {best_val_mae:.4f}")
-    print(f"✅ Best Validation RMSE: {best_val_rmse:.4f}")
+    if Config.is_classification():
+        print(f"✅ Best Validation Acc: {best_val_acc:.4f}")
+        print(f"✅ Best Validation F1: {best_val_f1:.4f}")
+    else:
+        print(f"✅ Best Validation MAE: {best_val_mae:.4f}")
+        print(f"✅ Best Validation RMSE: {best_val_rmse:.4f}")
     print("="*60 + "\n")
     
     if Config.USE_WANDB:
-        wandb.run.summary["best_val_mae"] = best_val_mae
-        wandb.run.summary["best_val_rmse"] = best_val_rmse
+        if Config.is_classification():
+            wandb.run.summary["best_val_acc"] = best_val_acc
+            wandb.run.summary["best_val_f1"] = best_val_f1
+        else:
+            wandb.run.summary["best_val_mae"] = best_val_mae
+            wandb.run.summary["best_val_rmse"] = best_val_rmse
     
     # Final confusion matrix dengan best model
     print("📊 Generating Final Confusion Matrix with Best Model...")
@@ -619,57 +719,118 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             final_val_preds.append(outputs.detach().cpu())
             final_val_targets.append(labels.cpu())
     
-    final_val_preds = torch.cat(final_val_preds).squeeze(-1)
-    final_val_targets = torch.cat(final_val_targets).squeeze(-1)
+    final_val_preds = torch.cat(final_val_preds)
+    final_val_targets = torch.cat(final_val_targets)
 
-    final_mae, final_rmse = compute_regression_metrics(final_val_preds, final_val_targets)
-    final_acc, final_preds_binary, final_targets_binary = get_classification_stats(final_val_preds, final_val_targets)
-    
-    final_cm = plot_confusion_matrix(
-        final_targets_binary, final_preds_binary,
-        epoch='final', fold=current_fold,
-        phase='val_best_model', save_dir=cm_save_dir,
-        class_names=['Alert', 'Drowsy'], labels=[0, 1]
-    )
-    
-    print(f"\n📊 Final Regression Metrics: MAE={final_mae:.4f}, RMSE={final_rmse:.4f}, Accuracy(threshold)={final_acc:.4f}")
-    print("\n📋 Final Model Classification Report:")
-    print_classification_report(final_cm, class_names=['Alert', 'Drowsy'])
+    if Config.is_classification():
+        if final_val_preds.dim() > 1:
+            final_val_preds = torch.argmax(final_val_preds, dim=-1)
+        final_val_targets = final_val_targets.squeeze(-1) if final_val_targets.dim() > 1 else final_val_targets
+
+        final_acc = (final_val_preds == final_val_targets).float().mean().item()
+        final_f1 = 0.0
+        for cls in range(Config.NUM_CLASSES):
+            tp = ((final_val_preds == cls) & (final_val_targets == cls)).sum().item()
+            fp = ((final_val_preds == cls) & (final_val_targets != cls)).sum().item()
+            fn = ((final_val_preds != cls) & (final_val_targets == cls)).sum().item()
+            if tp == 0:
+                continue
+            precision = tp / (tp + fp + 1e-12)
+            recall = tp / (tp + fn + 1e-12)
+            final_f1 += 2 * precision * recall / (precision + recall + 1e-12)
+        final_f1 = final_f1 / Config.NUM_CLASSES
+
+        if Config.NUM_CLASSES == 2:
+            class_names = ['Alert', 'Drowsy']
+            labels = [0, 1]
+        else:
+            class_names = ['Alert', 'Low Vigilance', 'Drowsy']
+            labels = [0, 1, 2]
+
+        final_cm = plot_confusion_matrix(
+            final_val_targets, final_val_preds,
+            epoch='final', fold=current_fold,
+            phase='val_best_model', save_dir=cm_save_dir,
+            class_names=class_names, labels=labels
+        )
+        
+        print(f"\n📊 Final Classification Metrics: Acc={final_acc:.4f}, F1={final_f1:.4f}")
+        print("\n📋 Final Model Classification Report:")
+        print_classification_report(final_cm, class_names=class_names)
+    else:
+        final_val_preds = final_val_preds.squeeze(-1)
+        final_val_targets = final_val_targets.squeeze(-1)
+
+        final_mae, final_rmse = compute_regression_metrics(final_val_preds, final_val_targets)
+        final_acc, final_preds_binary, final_targets_binary = get_classification_stats(final_val_preds, final_val_targets)
+        
+        final_cm = plot_confusion_matrix(
+            final_targets_binary, final_preds_binary,
+            epoch='final', fold=current_fold,
+            phase='val_best_model', save_dir=cm_save_dir,
+            class_names=['Alert', 'Drowsy'], labels=[0, 1]
+        )
+        
+        print(f"\n📊 Final Regression Metrics: MAE={final_mae:.4f}, RMSE={final_rmse:.4f}, Accuracy(threshold)={final_acc:.4f}")
+        print("\n📋 Final Model Classification Report:")
+        print_classification_report(final_cm, class_names=['Alert', 'Drowsy'])
 
     if Config.USE_WANDB:
         wandb.finish()
     
-    return best_val_mae, best_val_rmse
+    if Config.is_classification():
+        return {
+            'best_val_acc': best_val_acc,
+            'best_val_f1': best_val_f1
+        }
+    else:
+        return {
+            'best_val_mae': best_val_mae,
+            'best_val_rmse': best_val_rmse
+        }
 
 if __name__ == "__main__":
     # Train single fold
-    # train(fold=0)
+    train(fold=0)
     
     # Fll 5-fold CV
-    results = []
-    for fold in range(Config.N_SPLITS):
-        print(f"\n{'='*70}")
-        print(f"📂 STARTING FOLD {fold + 1}/{Config.N_SPLITS}")
-        print(f"{'='*70}\n")
+    # results = []
+    # for fold in range(Config.N_SPLITS):
+    #     print(f"\n{'='*70}")
+    #     print(f"📂 STARTING FOLD {fold + 1}/{Config.N_SPLITS}")
+    #     print(f"{'='*70}\n")
         
-        acc, f1 = train(fold=fold)
-        results.append({'fold': fold, 'accuracy': acc, 'f1': f1})
+    #     result = train(fold=fold)
+    #     result['fold'] = fold
+    #     results.append(result)
         
-        print(f"\n✅ Fold {fold + 1} completed: Acc={acc:.4f}, F1={f1:.4f}\n")
+    #     if Config.is_classification():
+    #         print(f"\n✅ Fold {fold + 1} completed: Acc={result['best_val_acc']:.4f}, F1={result['best_val_f1']:.4f}\n")
+    #     else:
+    #         print(f"\n✅ Fold {fold + 1} completed: MAE={result['best_val_mae']:.4f}, RMSE={result['best_val_rmse']:.4f}\n")
     
-    # Ringkasan hasil
-    print("\n" + "="*70)
-    print("📊 5-FOLD CROSS VALIDATION RESULTS")
-    print("="*70)
-    for r in results:
-        print(f"Fold {r['fold']+1}: Acc={r['accuracy']:.4f}, F1={r['f1']:.4f}")
-    
-    mean_acc = np.mean([r['accuracy'] for r in results])
-    std_acc = np.std([r['accuracy'] for r in results])
-    mean_f1 = np.mean([r['f1'] for r in results])
-    std_f1 = np.std([r['f1'] for r in results])
-    
-    print("-"*70)
-    print(f"Mean Accuracy: {mean_acc:.4f} ± {std_acc:.4f}")
-    print(f"Mean F1-Score: {mean_f1:.4f} ± {std_f1:.4f}")
-    print("="*70)
+    # # Ringkasan hasil
+    # print("\n" + "="*70)
+    # print("📊 5-FOLD CROSS VALIDATION RESULTS")
+    # print("="*70)
+    # if Config.is_classification():
+    #     for r in results:
+    #         print(f"Fold {r['fold']+1}: Acc={r['best_val_acc']:.4f}, F1={r['best_val_f1']:.4f}")
+    #     mean_acc = np.mean([r['best_val_acc'] for r in results])
+    #     std_acc = np.std([r['best_val_acc'] for r in results])
+    #     mean_f1 = np.mean([r['best_val_f1'] for r in results])
+    #     std_f1 = np.std([r['best_val_f1'] for r in results])
+    #     print("-"*70)
+    #     print(f"Mean Accuracy: {mean_acc:.4f} ± {std_acc:.4f}")
+    #     print(f"Mean F1-Score: {mean_f1:.4f} ± {std_f1:.4f}")
+    # else:
+    #     for r in results:
+    #         print(f"Fold {r['fold']+1}: MAE={r['best_val_mae']:.4f}, RMSE={r['best_val_rmse']:.4f}")
+    #     mean_mae = np.mean([r['best_val_mae'] for r in results])
+    #     std_mae = np.std([r['best_val_mae'] for r in results])
+    #     mean_rmse = np.mean([r['best_val_rmse'] for r in results])
+    #     std_rmse = np.std([r['best_val_rmse'] for r in results])
+    #     print("-"*70)
+    #     print(f"Mean MAE: {mean_mae:.4f} ± {std_mae:.4f}")
+    #     print(f"Mean RMSE: {mean_rmse:.4f} ± {std_rmse:.4f}")
+    # print("="*70)

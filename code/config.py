@@ -16,6 +16,7 @@ class Config:
     # ==================== Data Parameters ====================
     IN_CHANNELS = 7      # EEG channels: Fz, Cz, C3, C4, Pz, EOG-V, EOG-H
     NUM_CLASSES = 2       # Used for auxiliary evaluation / visualization only
+    TASK_TYPE = "classification"  # Options: "regression" or "classification"
     OUTPUT_DIM = 1
     WINDOW_SEC = 30       # Window size in seconds
     ORIGINAL_SAMPLE_RATE = 512  # Hz
@@ -84,3 +85,11 @@ class Config:
             key: value for key, value in cls.__dict__.items()
             if not key.startswith('__') and not callable(value)
         }
+
+    @classmethod
+    def get_output_dim(cls):
+        return 1 if cls.TASK_TYPE == "regression" else cls.NUM_CLASSES
+
+    @classmethod
+    def is_classification(cls):
+        return cls.TASK_TYPE == "classification"
