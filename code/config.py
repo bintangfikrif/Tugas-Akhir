@@ -50,7 +50,7 @@ class Config:
     CURRENT_FOLD = 0
     
     # ==================== Loss Function ====================
-    LOSS_TYPE = "mae"  # "ordinal" or "ce" (cross-entropy)
+    LOSS_TYPE = "ce"  # "ordinal" or "ce" (cross-entropy)
     ORDINAL_IMPORTANCE = 1.0  # Weight for ordinal loss
     
     # ==================== Data Augmentation ====================
