@@ -791,46 +791,46 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
 if __name__ == "__main__":
     # Train single fold
-    train(fold=0)
+    # train(fold=0)
     
     # Fll 5-fold CV
-    # results = []
-    # for fold in range(Config.N_SPLITS):
-    #     print(f"\n{'='*70}")
-    #     print(f"📂 STARTING FOLD {fold + 1}/{Config.N_SPLITS}")
-    #     print(f"{'='*70}\n")
+    results = []
+    for fold in range(Config.N_SPLITS):
+        print(f"\n{'='*70}")
+        print(f"📂 STARTING FOLD {fold + 1}/{Config.N_SPLITS}")
+        print(f"{'='*70}\n")
         
-    #     result = train(fold=fold)
-    #     result['fold'] = fold
-    #     results.append(result)
+        result = train(fold=fold)
+        result['fold'] = fold
+        results.append(result)
         
-    #     if Config.is_classification():
-    #         print(f"\n✅ Fold {fold + 1} completed: Acc={result['best_val_acc']:.4f}, F1={result['best_val_f1']:.4f}\n")
-    #     else:
-    #         print(f"\n✅ Fold {fold + 1} completed: MAE={result['best_val_mae']:.4f}, RMSE={result['best_val_rmse']:.4f}\n")
+        if Config.is_classification():
+            print(f"\n✅ Fold {fold + 1} completed: Acc={result['best_val_acc']:.4f}, F1={result['best_val_f1']:.4f}\n")
+        else:
+            print(f"\n✅ Fold {fold + 1} completed: MAE={result['best_val_mae']:.4f}, RMSE={result['best_val_rmse']:.4f}\n")
     
-    # # Ringkasan hasil
-    # print("\n" + "="*70)
-    # print("📊 5-FOLD CROSS VALIDATION RESULTS")
-    # print("="*70)
-    # if Config.is_classification():
-    #     for r in results:
-    #         print(f"Fold {r['fold']+1}: Acc={r['best_val_acc']:.4f}, F1={r['best_val_f1']:.4f}")
-    #     mean_acc = np.mean([r['best_val_acc'] for r in results])
-    #     std_acc = np.std([r['best_val_acc'] for r in results])
-    #     mean_f1 = np.mean([r['best_val_f1'] for r in results])
-    #     std_f1 = np.std([r['best_val_f1'] for r in results])
-    #     print("-"*70)
-    #     print(f"Mean Accuracy: {mean_acc:.4f} ± {std_acc:.4f}")
-    #     print(f"Mean F1-Score: {mean_f1:.4f} ± {std_f1:.4f}")
-    # else:
-    #     for r in results:
-    #         print(f"Fold {r['fold']+1}: MAE={r['best_val_mae']:.4f}, RMSE={r['best_val_rmse']:.4f}")
-    #     mean_mae = np.mean([r['best_val_mae'] for r in results])
-    #     std_mae = np.std([r['best_val_mae'] for r in results])
-    #     mean_rmse = np.mean([r['best_val_rmse'] for r in results])
-    #     std_rmse = np.std([r['best_val_rmse'] for r in results])
-    #     print("-"*70)
-    #     print(f"Mean MAE: {mean_mae:.4f} ± {std_mae:.4f}")
-    #     print(f"Mean RMSE: {mean_rmse:.4f} ± {std_rmse:.4f}")
-    # print("="*70)
+    # Ringkasan hasil
+    print("\n" + "="*70)
+    print("📊 5-FOLD CROSS VALIDATION RESULTS")
+    print("="*70)
+    if Config.is_classification():
+        for r in results:
+            print(f"Fold {r['fold']+1}: Acc={r['best_val_acc']:.4f}, F1={r['best_val_f1']:.4f}")
+        mean_acc = np.mean([r['best_val_acc'] for r in results])
+        std_acc = np.std([r['best_val_acc'] for r in results])
+        mean_f1 = np.mean([r['best_val_f1'] for r in results])
+        std_f1 = np.std([r['best_val_f1'] for r in results])
+        print("-"*70)
+        print(f"Mean Accuracy: {mean_acc:.4f} ± {std_acc:.4f}")
+        print(f"Mean F1-Score: {mean_f1:.4f} ± {std_f1:.4f}")
+    else:
+        for r in results:
+            print(f"Fold {r['fold']+1}: MAE={r['best_val_mae']:.4f}, RMSE={r['best_val_rmse']:.4f}")
+        mean_mae = np.mean([r['best_val_mae'] for r in results])
+        std_mae = np.std([r['best_val_mae'] for r in results])
+        mean_rmse = np.mean([r['best_val_rmse'] for r in results])
+        std_rmse = np.std([r['best_val_rmse'] for r in results])
+        print("-"*70)
+        print(f"Mean MAE: {mean_mae:.4f} ± {std_mae:.4f}")
+        print(f"Mean RMSE: {mean_rmse:.4f} ± {std_rmse:.4f}")
+    print("="*70)
