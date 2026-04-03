@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from mamba_ssm import Mamba
 from einops import rearrange
 from config import Config
+from torchinfo import summary
 
 class MambaBlock(nn.Module):
     """
@@ -118,3 +119,28 @@ class MambaDrowsinessDetector(nn.Module):
 
     def get_num_params(self):
         return sum(p.numel() for p in self.parameters())
+    
+def print_model_summary():
+    # 1. Inisiasi Model
+    model = MambaDrowsinessDetector()
+    
+    # 2. Definisikan Dummy Input (B, C, L)
+    # Sesuai deskripsi lu: Batch=1, Channel=Config.IN_CHANNELS, Length=15360
+    batch_size = 1
+    input_size = (batch_size, Config.IN_CHANNELS, 15360) 
+    
+    # 3. Print Summary
+    print("\n" + "="*50)
+    print("MAMBA DROWSINESS DETECTOR SUMMARY")
+    print("="*50)
+    
+    summary(
+        model, 
+        input_size=input_size,
+        col_names=["input_size", "output_size", "num_params", "kernel_size", "mult_adds"],
+        col_width=20,
+        device="cuda" if torch.cuda.is_available() else "cpu"
+    )
+
+if __name__ == "__main__":
+    print_model_summary()
