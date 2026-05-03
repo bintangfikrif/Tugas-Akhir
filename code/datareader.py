@@ -18,41 +18,6 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
-BANDPASS_LOW  = 0.5   # Hz
-BANDPASS_HIGH = 40.0  # Hz
-
-def apply_bandpass(signal_uv: np.ndarray, sfreq: float) -> np.ndarray:
-    """
-    Terapkan bandpass filter Butterworth orde 4 pada sinyal EEG/EOG.
-
-    Args:
-        signal_uv : np.ndarray shape (n_channels, n_times), dalam μV
-        sfreq     : sampling frequency (Hz)
-
-    Returns:
-        sinyal yang sudah difilter, shape sama dengan input
-    """
-    from scipy.signal import butter, filtfilt
-
-    nyq  = sfreq / 2.0
-    low  = BANDPASS_LOW  / nyq
-    high = BANDPASS_HIGH / nyq
-
-    # Butterworth orde 4 — zero-phase (filtfilt) agar tidak ada phase shift
-    b, a = butter(4, [low, high], btype='band')
-
-    filtered = np.zeros_like(signal_uv)
-    for ch in range(signal_uv.shape[0]):
-        filtered[ch] = filtfilt(b, a, signal_uv[ch])
-
-    return filtered
-
-# ============================================================
-# FUNGSI KONVERSI LABEL
-# Dikontrol oleh Config.NUM_CLASSES:
-#   NUM_CLASSES = 3 → Alert(0) / Low Vigilance(1) / Drowsy(2)
-#   NUM_CLASSES = 2 → Alert(0) / Drowsy(1)
-# ============================================================
 
 def kss_to_class(kss: int) -> int:
     """Konversi nilai KSS mentah ke indeks kelas."""
@@ -77,25 +42,19 @@ def kss_to_float(kss: int) -> float:
     return float(kss)
 
 def get_binary_label(kss: int) -> int:
-    """Hanya digunakan untuk hitung akurasi semu (Thresholding)."""
-    # Threshold 5.5: 1-5 Alert (0), 6-9 Drowsy (1)
+    # Threshold: 1-5 Alert (0), 6-9 Drowsy (1)
     return 0 if kss <= 5 else 1
 
-# ============================================================
-# AUGMENTASI EEG
-# ============================================================
-
+# AUGMENTASI 
 class EEGAugmentation:
     def __init__(
         self,
         gaussian_std=Config.AUG_GAUSSIAN_NOISE_STD,
         amplitude_range=Config.AUG_AMPLITUDE_SCALE_RANGE,
-        time_shift_max=Config.AUG_TIME_SHIFT_MAX,
         prob=0.5
     ):
         self.gaussian_std    = gaussian_std
         self.amplitude_range = amplitude_range
-        self.time_shift_max  = time_shift_max
         self.prob            = prob
 
     def add_gaussian_noise(self, signal):
@@ -110,16 +69,7 @@ class EEGAugmentation:
             signal = signal * scale
         return signal
 
-    def time_shift(self, signal):
-        if np.random.rand() < self.prob:
-            shift  = np.random.randint(-self.time_shift_max, self.time_shift_max)
-            signal = torch.roll(signal, shifts=shift, dims=1)
-        return signal
-
-# ============================================================
 # DATASET
-# ============================================================
-
 class EEGDataset(Dataset):
     def __init__(
         self,
@@ -135,7 +85,6 @@ class EEGDataset(Dataset):
 
         df = pd.read_csv(csv_path)
         if 'subject_id' not in df.columns:
-            # DROZY format: "1-1.edf" → subject_id = "1"
             df['subject_id'] = df['filename'].apply(lambda x: x.split('-')[0])
 
         gkf    = GroupKFold(n_splits=n_splits)
@@ -153,7 +102,6 @@ class EEGDataset(Dataset):
               f"(Window={window_sec}s, Stride={stride_sec}s)...")
 
         for filename, label in self.file_list:
-            # Skip KSS=0 (hanya 7-1.edf, tidak valid)
             if label == 0:
                 print(f"  [SKIP] {filename}: KSS=0 tidak valid")
                 continue
@@ -208,9 +156,6 @@ class EEGDataset(Dataset):
                         raw.pick(['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H'])
                         signal_fp = raw.get_data() * 1e6
 
-                        if getattr(Config, 'USE_BANDPASS_FILTER', True):
-                            signal_fp = apply_bandpass(signal_fp, sfreq=Config.SAMPLE_RATE)
-
                         sum_ch += signal_fp.sum(axis=1, keepdims=True)
                         sumsq_ch += (signal_fp ** 2).sum(axis=1, keepdims=True)
                         count += signal_fp.shape[1]
@@ -228,8 +173,6 @@ class EEGDataset(Dataset):
 
             print(f"[NORM] Selesai. subject_count={len(self.subject_stats)}\n")
 
-    # ----------------------------------------------------------
-
     def __len__(self):
         return len(self.samples)
 
@@ -237,7 +180,6 @@ class EEGDataset(Dataset):
         info      = self.samples[idx]
         file_path = info['file_path']
         start_sec = info['start_sec']
-        # info['label'] sekarang kita perlakukan sebagai skor KSS murni (1-9)
 
         try:
             raw = mne.io.read_raw_edf(file_path, preload=True, verbose='error')
@@ -252,9 +194,6 @@ class EEGDataset(Dataset):
             
             current_sr = Config.DOWNSAMPLE_RATE if getattr(Config, 'USE_DOWNSAMPLE', False) else Config.ORIGINAL_SAMPLE_RATE
             signal = raw.get_data() * 1e6 # Volt -> μV
-
-            if getattr(Config, 'USE_BANDPASS_FILTER', True):
-                signal = apply_bandpass(signal, sfreq=current_sr)
 
             # Normalisasi Sinyal (Subject/Window) tetap sama
             norm_mode = getattr(Config, 'NORMALIZATION', 'window')
@@ -272,7 +211,7 @@ class EEGDataset(Dataset):
             signal = torch.tensor(signal, dtype=torch.float32)
 
             if self.use_augmentation:
-                aug = EEGAugmentation() # Pake parameter dari Config lo
+                aug = EEGAugmentation()
                 signal = aug.add_gaussian_noise(signal)
                 signal = aug.amplitude_scaling(signal)
 
@@ -293,54 +232,9 @@ class EEGDataset(Dataset):
             return (torch.zeros((Config.IN_CHANNELS, dummy_len)), 
                     torch.tensor([0.0], dtype=torch.float32))
 
-
-# ============================================================
-# SAMPLER & COLLATE
-# ============================================================
-
-class UniqueRecordingBatchSampler(Sampler):
-    def __init__(self, dataset, batch_size):
-        self.dataset    = dataset
-        self.batch_size = batch_size
-
-        self.file_to_indices = defaultdict(list)
-        for idx, sample in enumerate(dataset.samples):
-            self.file_to_indices[sample['file_path']].append(idx)
-
-        self.unique_files = list(self.file_to_indices.keys())
-
-        if len(self.unique_files) < self.batch_size:
-            print(f"Warning: rekaman unik ({len(self.unique_files)}) < "
-                  f"batch size ({self.batch_size}). Disesuaikan.")
-            self.batch_size = len(self.unique_files)
-
-    def __iter__(self):
-        working = {f: self.file_to_indices[f].copy() for f in self.unique_files}
-        for lst in working.values():
-            np.random.shuffle(lst)
-
-        available = list(self.unique_files)
-        while len(available) >= self.batch_size:
-            selected = random.sample(available, self.batch_size)
-            batch    = []
-            for f in selected:
-                batch.append(working[f].pop())
-                if len(working[f]) == 0:
-                    available.remove(f)
-            yield batch
-
-    def __len__(self):
-        return len(self.dataset) // self.batch_size
-
-
 def collate_fn(batch):
     signals, labels = zip(*batch)
     return torch.stack(signals), torch.stack(labels)
-
-
-# ============================================================
-# HELPER: muat sinyal mentah μV (tanpa normalisasi, untuk viz)
-# ============================================================
 
 CHANNEL_NAMES = ['Fz', 'Cz', 'C3', 'C4', 'Pz', 'EOG-V', 'EOG-H']
 
@@ -351,26 +245,10 @@ def _load_raw_signal(file_path, start_sec, window_sec):
     raw.crop(tmin=start_sec, tmax=start_sec + window_sec, include_tmax=False)
     signal = raw.get_data() * 1e6   # (7, T)
 
-    # Terapkan filter yang sama seperti training agar visualisasi konsisten
-    if getattr(Config, 'USE_BANDPASS_FILTER', True):
-        signal = apply_bandpass(signal, sfreq=Config.SAMPLE_RATE)
-
     return signal
 
-
-# ============================================================
-# VISUALISASI 1 — Sinyal mentah per kelas
-# ============================================================
-
+# VISUALISASI Sinyal mentah per kelas
 def visualize_class_comparison(dataset, n_examples=2, save_path='sample_comparison.png'):
-    """
-    Tampilkan n_examples window per kelas secara berdampingan.
-    Sinyal dalam μV TANPA normalisasi agar mudah dibandingkan secara visual.
-
-    Layout:
-        Baris  = channel (7 channel)
-        Kolom  = contoh-1 kelas-A | contoh-2 kelas-A | contoh-1 kelas-B | ...
-    """
     n_classes  = Config.NUM_CLASSES
     window_sec = dataset.window_sec
     sr         = Config.SAMPLE_RATE
@@ -465,198 +343,8 @@ def visualize_class_comparison(dataset, n_examples=2, save_path='sample_comparis
     plt.close()
     print(f"[VIZ] Sinyal tersimpan → {save_path}")
 
-
-# ============================================================
-# VISUALISASI 2 — Power Spectral Density per kelas
-# ============================================================
-
-def visualize_psd_comparison(dataset, n_samples_per_class=10, save_path='psd_comparison.png'):
-    """
-    Bandingkan rata-rata PSD antar kelas per channel EEG.
-
-    Theta (4-8 Hz) dan Alpha (8-12 Hz) adalah marker utama kantuk:
-    keduanya meningkat saat drowsy.  Plot ini memperlihatkan apakah
-    sinyal dalam dataset memang mencerminkan pola tersebut.
-    """
-    from scipy.signal import welch
-
-    n_classes  = Config.NUM_CLASSES
-    window_sec = dataset.window_sec
-    sr         = Config.SAMPLE_RATE
-    n_ch       = len(CHANNEL_NAMES)
-
-    # Kumpulkan PSD per kelas per channel
-    psd_acc = {c: [[] for _ in range(n_ch)] for c in range(n_classes)}
-
-    idx_per_class = defaultdict(list)
-    for i, s in enumerate(dataset.samples):
-        idx_per_class[s['class_idx']].append(i)
-
-    for c in range(n_classes):
-        pool   = idx_per_class[c]
-        chosen = random.sample(pool, min(n_samples_per_class, len(pool)))
-        for i in chosen:
-            info = dataset.samples[i]
-            try:
-                sig = _load_raw_signal(info['file_path'], info['start_sec'], window_sec)
-                for ch in range(n_ch):
-                    _, pxx = welch(sig[ch], fs=sr, nperseg=sr * 2)
-                    psd_acc[c][ch].append(pxx)
-            except Exception:
-                continue
-
-    # Referensi frekuensi
-    f_ref, _ = welch(np.zeros(int(window_sec * sr)), fs=sr, nperseg=sr * 2)
-
-    # Band shading
-    bands = [
-        ('δ (1-4)', 1,  4,  '#E3F2FD'),
-        ('θ (4-8)', 4,  8,  '#FFF9C4'),
-        ('α (8-12)', 8, 12, '#F3E5F5'),
-        ('β (12-30)', 12, 30, '#E8F5E9'),
-    ]
-
-    colors = {0: '#1565C0', 1: '#FF6F00', 2: '#B71C1C'}
-
-    fig, axes = plt.subplots(nrows=n_ch, ncols=1, figsize=(11, n_ch * 2.5), sharex=True)
-    if n_ch == 1:
-        axes = [axes]
-
-    for ch in range(n_ch):
-        ax = axes[ch]
-
-        # Band shading
-        for bname, blo, bhi, bcol in bands:
-            ax.axvspan(blo, bhi, alpha=0.18, color=bcol)
-            if ch == 0:
-                ax.text((blo + bhi) / 2, 1, bname,
-                        ha='center', va='bottom', fontsize=6.5,
-                        color='#757575', transform=ax.get_xaxis_transform())
-
-        for c in range(n_classes):
-            psds = psd_acc[c][ch]
-            if len(psds) == 0:
-                continue
-            arr      = np.array(psds)
-            mean_psd = np.mean(arr, axis=0)
-            std_psd  = np.std(arr,  axis=0)
-
-            ax.semilogy(f_ref, mean_psd,
-                        label=f"{class_name(c)} (n={len(psds)})",
-                        color=colors[c], linewidth=1.8)
-            ax.fill_between(f_ref,
-                            np.maximum(mean_psd - std_psd, 1e-3),
-                            mean_psd + std_psd,
-                            alpha=0.15, color=colors[c])
-
-        ax.set_xlim(1, 35)
-        ax.set_ylabel(f'{CHANNEL_NAMES[ch]}\n(μV²/Hz)', fontsize=7.5)
-        ax.tick_params(labelsize=6.5)
-        ax.grid(True, alpha=0.25, which='both', linestyle='--')
-
-        if ch == 0:
-            ax.legend(fontsize=8, loc='upper right', framealpha=0.8)
-
-    axes[-1].set_xlabel('Frekuensi (Hz)', fontsize=9)
-    mode_str = f"{n_classes}-Class"
-    fig.suptitle(
-        f'Power Spectral Density per Kelas — {mode_str}\n'
-        f'Rata-rata {n_samples_per_class} sample/kelas | '
-        'Peningkatan θ & α = indikator kantuk',
-        fontsize=10, fontweight='bold'
-    )
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"[VIZ] PSD tersimpan → {save_path}")
-
-
-# ============================================================
-# VISUALISASI 3 — Per Label (7 channel dalam 1 file per kelas)
-# ============================================================
-
-def visualize_labelwise_channel_traces(dataset, n_samples_per_label=5, save_dir='channel_label_plots'):
-    """
-    Setiap kelas dibuatkan satu file dengan 7 subplot channel.
-    Masing-masing channel memplot beberapa sample sinyal dari kelas itu.
-
-    Args:
-        dataset: EEGDataset instance
-        n_samples_per_label: jumlah sample per kelas untuk setiap channel
-        save_dir: direktori untuk menyimpan plot
-    """
-    os.makedirs(save_dir, exist_ok=True)
-
-    n_classes = Config.NUM_CLASSES
-    window_sec = dataset.window_sec
-    sr = Config.SAMPLE_RATE
-    n_ch = len(CHANNEL_NAMES)
-
-    idx_per_class = defaultdict(list)
-    for i, s in enumerate(dataset.samples):
-        idx_per_class[s['class_idx']].append(i)
-
-    t = np.linspace(0, window_sec, int(window_sec * sr))
-    colors = {0: '#1565C0', 1: '#FF6F00', 2: '#B71C1C'}
-
-    for label_idx in range(n_classes):
-        label_name = class_name(label_idx)
-        pool = idx_per_class[label_idx]
-
-        if len(pool) == 0:
-            print(f"  [SKIP] Label {label_name}: tidak ada sample")
-            continue
-
-        chosen = random.sample(pool, min(n_samples_per_label, len(pool)))
-
-        fig, axes = plt.subplots(n_ch, 1, figsize=(12, n_ch * 1.8), sharex=True)
-        if n_ch == 1:
-            axes = [axes]
-
-        for ch_idx, ch_name in enumerate(CHANNEL_NAMES):
-            ax = axes[ch_idx]
-
-            for sample_i in chosen:
-                info = dataset.samples[sample_i]
-                try:
-                    sig = _load_raw_signal(info['file_path'], info['start_sec'], window_sec)
-                    ax.plot(t, sig[ch_idx], color=colors.get(label_idx, '#424242'), alpha=0.6, linewidth=1)
-                except Exception as e:
-                    print(f"    [ERROR] Sample {sample_i} channel {ch_name}: {e}")
-
-            ax.set_ylabel(ch_name, fontsize=9, rotation=0, labelpad=40, va='center')
-            ax.grid(True, alpha=0.25)
-            ax.axhline(0, color='black', linewidth=0.6, linestyle='--')
-
-            all_y = np.concatenate([line.get_ydata() for line in ax.lines]) if ax.lines else np.array([0])
-            y_min, y_max = np.percentile(all_y, [5, 95])
-            margin = max((y_max - y_min) * 0.12, 1.0)
-            ax.set_ylim(y_min - margin, y_max + margin)
-            ax.set_yticks([])
-
-            if ch_idx == 0:
-                ax.set_title(f"Channel {ch_name} — Label {label_name} ({len(chosen)} sample)", fontsize=12, fontweight='bold')
-
-        axes[-1].set_xlabel('Time (s)', fontsize=10)
-
-        fig.suptitle(f"Per Label: {label_name} | {n_ch} channel | {len(chosen)} sample per channel", fontsize=14, fontweight='bold')
-        plt.tight_layout(rect=[0.05, 0.03, 0.98, 0.95])
-
-        save_path = os.path.join(save_dir, f'label_{label_name.replace(" ", "_")}_channel_traces.png')
-        plt.savefig(save_path, dpi=180, bbox_inches='tight')
-        plt.close(fig)
-
-        print(f"  [VIZ] Simpan: {save_path}")
-
-    print(f"  [VIZ] Selesai: {n_classes} file labelwise di {save_dir}/")
-
-
-# ============================================================
 # MAIN
-# ============================================================
-
 if __name__ == "__main__":
-
     mode_str = f"{Config.NUM_CLASSES}-Class"
     print("=" * 60)
     print(f"  EEGDataset — Mode: {mode_str}")
@@ -700,8 +388,7 @@ if __name__ == "__main__":
         print(f"\n  Shape signal : {sig.shape}  (channels × timesteps)")
         print(f"  Label contoh : {lab.item()} = {class_name(lab.item())}")
 
-    # Visualisasi: 1 contoh sinyal EEG+EOG per kelas
-    # Jumlah kolom otomatis menyesuaikan NUM_CLASSES (2 atau 3)
+    # Visualisasi contoh sinyal EEG+EOG per kelas
     n_classes = Config.NUM_CLASSES
     print(f"\n[VIZ] Membuat plot sinyal — {n_classes} kelas ({mode_str})...")
     visualize_class_comparison(
@@ -709,19 +396,3 @@ if __name__ == "__main__":
         n_examples=1,           # 1 contoh per kelas
         save_path=f'sample_comparison_{n_classes}class.png'
     )
-
-    print("[VIZ] Membuat plot PSD...")
-    visualize_psd_comparison(
-        train_dataset,
-        n_samples_per_class=15,
-        save_path=f'psd_comparison_{n_classes}class.png'
-    )
-
-    print(f"\nSelesai. Output:")
-    print(f"  sample_comparison_{n_classes}class.png  — sinyal μV per kelas")
-    print(f"  psd_comparison_{n_classes}class.png     — PSD theta/alpha per channel")
-
-    # Generate plot per channel per label
-    print(f"\n[VIZ] Membuat plot per label (7 channel dalam 1 file per label)...")
-    visualize_labelwise_channel_traces(train_dataset, n_samples_per_label=1, save_dir='channel_label_plots')
-    print(f"  channel_label_plots/ — {n_classes} file PDF/PNG labels")

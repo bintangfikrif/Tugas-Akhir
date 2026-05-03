@@ -1,4 +1,4 @@
-import os
+﻿import os
 import torch
 import numpy as np
 import wandb
@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from datetime import datetime
 from thop import profile, clever_format
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, f1_score
 
 # Mengimpor modul kustom yang telah disesuaikan dengan proposal
 from datareader import EEGDataset, collate_fn
@@ -18,52 +18,44 @@ from config import Config
 
 def evaluate_model_complexity(model, device, input_shape=(1, 7, 15360)):
     print("\n" + "="*60)
-    print("📊 EVALUASI KOMPLEKSITAS KOMPUTASI")
+    print("📊 EVALUASI KOMPLEKSITAS KOMPUTASI (HYBRID ESTIMATION)")
     print("="*60)
     
-    # Buat dummy input sesuai format data EEG
     dummy_input = torch.randn(input_shape).to(device)
     
-    # Hitung FLOPs dan Parameters menggunakan thop
     model.eval()
     with torch.no_grad():
-        macs, params = profile(model, inputs=(dummy_input,), verbose=False)
+        # 1. Biarkan thop ngitung apa yang dia bisa (Conv & Linear)
+        macs_thop, params_thop = profile(model, inputs=(dummy_input,), verbose=False)
+        
+        # 2. Mengambil parameter asli dari model (models.py)
+        params_asli = model.get_num_params()
+        
+        # 3. Cari tau berapa parameter Mamba yang tidak dihitung thop
+        params_mamba_hilang = max(0, params_asli - params_thop)
+        
+        # 4. Estimasi MACs Mamba: Parameter yang hilang dikali Sequence Length masuk Mamba (480)
+        # 15360 / 8 (stride1) / 4 (stride2) = 480
+        sequence_length = 480 
+        macs_mamba_estimasi = params_mamba_hilang * sequence_length
+        
+        # 5. Totalin semuanya
+        total_macs = macs_thop + macs_mamba_estimasi
+        total_params = params_asli
     
     # Convert ke format human-readable
-    gflops = macs / 1e9  # Convert ke Giga FLOPs
-    params_million = params / 1e6  # Convert ke Millions
+    gflops = total_macs / 1e9  # Convert ke Giga FLOPs
+    params_million = total_params / 1e6  # Convert ke Millions
     
-    # Format dengan clever_format untuk output yang rapi
-    macs_str, params_str = clever_format([macs, params], "%.3f")
+    # Format string
+    macs_str = f"{total_macs / 1e6:.3f}M"
+    params_str = f"{total_params / 1e3:.3f}K"
     
     print(f"\n📈 Hasil Evaluasi:")
-    print(f"   ├─ Jumlah Parameter: {params_str} ({params_million:.2f}M)")
-    print(f"   ├─ MACs: {macs_str}")
-    print(f"   └─ GFLOPs: {gflops:.3f}")
-    
-    print(f"\n📝 Interpretasi:")
-    print(f"   • Parameter count mengindikasikan ukuran model (memory footprint)")
-    print(f"   • GFLOPs mengindikasikan kompleksitas komputasi (inference speed)")
-    
-    print(f"\n🔍 Perbandingan Kontekstual:")
-    if params_million < 1.0:
-        print(f"   ✅ Model sangat ringan (<1M parameters)")
-    elif params_million < 10.0:
-        print(f"   ✅ Model ringan (1-10M parameters)")
-    elif params_million < 50.0:
-        print(f"   ⚠️  Model medium (10-50M parameters)")
-    else:
-        print(f"   ❌ Model berat (>50M parameters)")
-    
-    if gflops < 1.0:
-        print(f"   ✅ Kompleksitas rendah (<1 GFLOPs)")
-    elif gflops < 5.0:
-        print(f"   ✅ Kompleksitas medium (1-5 GFLOPs)")
-    else:
-        print(f"   ⚠️  Kompleksitas tinggi (>5 GFLOPs)")
-    
-    print("="*60 + "\n")
-    
+    print(f"   ├─ Jumlah Parameter: {params_str} ({params_million:.6f}M)")
+    print(f"   ├─ MACs (Estimasi): {macs_str}")
+    print(f"   └─ GFLOPs: {gflops:.6f}")
+        
     return gflops, params_million, macs_str, params_str
 
 def plot_confusion_matrix(y_true, y_pred, epoch, fold, phase='val', save_dir='confusion_matrices', labels=None, class_names=None):
@@ -140,9 +132,7 @@ def plot_confusion_matrix(y_true, y_pred, epoch, fold, phase='val', save_dir='co
     })
 
     plt.close(fig)
-
     print(f"📊 Confusion Matrix disimpan: {save_path}")
-
     return cm
 
 def compute_per_class_metrics(cm, class_names=None):
@@ -151,19 +141,10 @@ def compute_per_class_metrics(cm, class_names=None):
     metrics = {}
     
     for i, class_name in enumerate(class_names):
-        # True Positive: diagonal element
         tp = cm[i, i]
-        
-        # False Positive: sum of column excluding diagonal
         fp = cm[:, i].sum() - tp
-        
-        # False Negative: sum of row excluding diagonal
         fn = cm[i, :].sum() - tp
-        
-        # True Negative: sum of all other elements
         tn = cm.sum() - tp - fp - fn
-        
-        # Hitung metrik sesuai rumus 2.4, 2.5, 2.6, 2.7 (hal. 25-26)
         precision = tp / (tp + fp + 1e-6)
         recall = tp / (tp + fn + 1e-6)
         f1 = 2 * (precision * recall) / (precision + recall + 1e-6)
@@ -234,19 +215,15 @@ def print_classification_report(cm, class_names=None):
     
     return metrics
 
-def train(fold=0):  # ✅ TAMBAHKAN parameter fold
+def train(fold=0):  
     # --- 1. Konfigurasi Eksperimen ---
     device = torch.device("cuda" if Config.USE_CUDA and torch.cuda.is_available() else "cpu")
-    
-    # ✅ GUNAKAN Config untuk semua parameter
     window_sec = Config.WINDOW_SEC
     n_splits = Config.N_SPLITS
     batch_size = Config.BATCH_SIZE
     epochs = Config.EPOCHS
     lr = Config.LEARNING_RATE
     current_fold = fold  # 
-    
-    # Konfigurasi Confusion Matrix
     cm_save_interval = 5
     cm_save_dir = 'confusion_matrices'
     
@@ -264,10 +241,8 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     
 # --- 2. Inisialisasi WandB ---
     if Config.USE_WANDB:
-        # Ambil config mentah
         raw_config = Config.to_dict()
-        
-        # FILTER: Buang item yang berupa function atau classmethod agar tidak error
+
         clean_config = {
             k: v for k, v in raw_config.items() 
             if not k.startswith('__') and not isinstance(v, (classmethod, staticmethod)) and not callable(v)
@@ -303,8 +278,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         use_augmentation=False          
     )
 
-    # FIX: Gunakan standard DataLoader — UniqueRecordingBatchSampler
-    # terlalu membatasi jumlah gradient updates per epoch
     train_loader = DataLoader(
         train_dataset,
         batch_size=Config.BATCH_SIZE,
@@ -325,7 +298,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     )
 
     # --- 4. Inisialisasi Model ---
-    # ✅ GUNAKAN Config untuk parameter model
     model = MambaDrowsinessDetector(
         in_channels=Config.IN_CHANNELS,
         num_classes=Config.get_output_dim(),
@@ -336,7 +308,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         expand=Config.MAMBA_EXPAND
     ).to(device)
 
-    # ✅ Evaluasi Kompleksitas Komputasi
+    # Evaluasi Kompleksitas Komputasi
     input_shape = (1, Config.IN_CHANNELS, Config.WINDOW_SEC * Config.SAMPLE_RATE)
     gflops, params_million, macs_str, params_str = evaluate_model_complexity(
         model, device, input_shape
@@ -361,13 +333,16 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         weight_decay=Config.WEIGHT_DECAY
     )
     
+    # Loss Function
     if Config.is_classification():
         class_weights = compute_inverse_weight([sample['class_idx'] for sample in train_dataset.samples], num_classes=Config.NUM_CLASSES)
+        # Weighted CE Loss bila Klasifikasi
         criterion = WeightedCrossEntropyLoss(weight=class_weights.to(device))
     else:
+        # MAE loss untuk Regresi
         criterion = MAELoss()
     
-    # TAMBAHKAN Learning Rate Scheduler
+    # Learning Rate Scheduler
     scheduler = None
     use_warmup = getattr(Config, 'USE_WARMUP', False)
     warmup_epochs = getattr(Config, 'WARMUP_EPOCHS', 0)
@@ -375,7 +350,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
 
     if Config.USE_SCHEDULER:
         from torch.optim.lr_scheduler import ReduceLROnPlateau, LinearLR
-
         plateau_scheduler = ReduceLROnPlateau(
             optimizer,
             mode='min',  # Monitor val_loss (semakin kecil semakin baik)
@@ -422,9 +396,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
     print("="*60 + "\n")
     
     for epoch in range(Config.EPOCHS):
-        # ========================================
-        # FASE TRAINING
-        # ========================================
         model.train()
         total_train_loss = 0
         train_preds_list = []
@@ -452,9 +423,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
-        # ========================================
-        # FASE VALIDASI
-        # ========================================
         model.eval()
         val_preds_list = []
         val_targets_list = []
@@ -476,9 +444,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
                 
                 pbar_val.set_postfix({"loss": f"{val_loss.item():.4f}"})
 
-        # ========================================
-        # PERHITUNGAN METRIK
-        # ========================================
         train_preds = torch.cat(train_preds_list)
         train_targets = torch.cat(train_targets_list)
         val_preds = torch.cat(val_preds_list)
@@ -488,23 +453,8 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             train_acc = (train_preds == train_targets).float().mean().item()
             val_acc = (val_preds == val_targets).float().mean().item()
 
-            # Compute F1 manually for binary or multiclass
-            def compute_f1(preds, targets, num_classes):
-                f1_scores = []
-                for cls in range(num_classes):
-                    tp = ((preds == cls) & (targets == cls)).sum().item()
-                    fp = ((preds == cls) & (targets != cls)).sum().item()
-                    fn = ((preds != cls) & (targets == cls)).sum().item()
-                    if tp == 0:
-                        f1_scores.append(0.0)
-                        continue
-                    precision = tp / (tp + fp + 1e-12)
-                    recall = tp / (tp + fn + 1e-12)
-                    f1_scores.append(2 * precision * recall / (precision + recall + 1e-12))
-                return sum(f1_scores) / len(f1_scores)
-
-            train_f1 = compute_f1(train_preds, train_targets, Config.NUM_CLASSES)
-            val_f1 = compute_f1(val_preds, val_targets, Config.NUM_CLASSES)
+            train_f1 = f1_score(train_targets, train_preds, average='macro', zero_division=0)
+            val_f1 = f1_score(val_targets, val_preds, average='macro', zero_division=0)
 
             train_mae, train_rmse = 0.0, 0.0
             val_mae, val_rmse = 0.0, 0.0
@@ -522,19 +472,8 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             train_acc, train_preds_binary, train_targets_binary = get_classification_stats(train_preds, train_targets)
             val_acc, val_preds_binary, val_targets_binary = get_classification_stats(val_preds, val_targets)
 
-            # Binary F1 from thresholded regression output
-            def compute_binary_f1(preds, targets):
-                tp = ((preds == 1) & (targets == 1)).sum().item()
-                fp = ((preds == 1) & (targets == 0)).sum().item()
-                fn = ((preds == 0) & (targets == 1)).sum().item()
-                if tp == 0:
-                    return 0.0
-                precision = tp / (tp + fp + 1e-12)
-                recall = tp / (tp + fn + 1e-12)
-                return 2 * precision * recall / (precision + recall + 1e-12)
-
-            train_f1 = compute_binary_f1(train_preds_binary, train_targets_binary)
-            val_f1 = compute_binary_f1(val_preds_binary, val_targets_binary)
+            train_f1 = f1_score(train_targets_binary, train_preds_binary, average='binary', zero_division=0)
+            val_f1 = f1_score(val_targets_binary, val_preds_binary, average='binary', zero_division=0)
 
         avg_train_loss = total_train_loss / len(train_loader)
         avg_val_loss = total_val_loss / len(val_loader)
@@ -549,9 +488,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         else:
             current_lr = Config.LEARNING_RATE
 
-        # ========================================
         # LOGGING KE WANDB
-        # ========================================
         wandb_log = {
             "epoch": epoch + 1,
             "learning_rate": current_lr,
@@ -567,8 +504,7 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             "val/f1_threshold": val_f1,
         }
 
-        if Config.USE_WANDB:
-            wandb.log(wandb_log)
+        wandb.log(wandb_log)
 
         # Print hasil epoch
         print(f"\n📊 Epoch {epoch+1}/{Config.EPOCHS} Summary:")
@@ -576,9 +512,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
         print(f"   Val   - Loss: {avg_val_loss:.4f} | MAE: {val_mae:.4f} | RMSE: {val_rmse:.4f} | Acc(threshold): {val_acc:.4f} | F1(threshold): {val_f1:.4f}")
         print(f"   LR: {current_lr:.2e}")
 
-        # ========================================
-        # CONFUSION MATRIX (EVALUASI THRESHOLD)
-        # ========================================
         if (epoch + 1) % cm_save_interval == 0 or epoch == Config.EPOCHS - 1:
             print(f"\n📈 Generating Confusion Matrix...")
 
@@ -610,9 +543,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             print(f"\n📋 Validation Set Classification Report:")
             val_class_metrics = print_classification_report(val_cm, class_names=class_names)
 
-        # ========================================
-        # SIMPAN MODEL TERBAIK & EARLY STOPPING
-        # ========================================
         if Config.is_classification():
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
@@ -681,9 +611,6 @@ def train(fold=0):  # ✅ TAMBAHKAN parameter fold
             print(f"   No improvement for {Config.EARLY_STOPPING_PATIENCE} epochs")
             break
 
-    # ========================================
-    # EVALUASI FINAL
-    # ========================================
     print("\n" + "="*60)
     print("🏁 PELATIHAN SELESAI")
     print("="*60)

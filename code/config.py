@@ -1,7 +1,3 @@
-"""
-Configuration file for Drowsiness Detection using Mamba
-"""
-
 class Config:
     # ==================== Model Architecture ====================
     MODEL_NAME = "mamba" 
@@ -54,11 +50,9 @@ class Config:
     ORDINAL_IMPORTANCE = 1.0  # Weight for ordinal loss
     
     # ==================== Data Augmentation ====================
-    USE_BANDPASS_FILTER = False
     USE_AUGMENTATION = True
     AUG_GAUSSIAN_NOISE_STD = 0.01
     AUG_AMPLITUDE_SCALE_RANGE = (0.9, 1.1)
-    AUG_TIME_SHIFT_MAX = 256  # samples
 
     # ==================== Normalization ====================
     # Options: 'window' (default), 'subject'
