@@ -45,15 +45,6 @@ class MambaDrowsinessDetector(nn.Module):
         dropout=0.5,
     ):
         super(MambaDrowsinessDetector, self).__init__()
-        
-        # 1. Temporal Encoder: Ekstraksi fitur + Downsampling bertahap
-        # Masalah sebelumnya: kernel_size=7 (0.014 detik) terlalu kecil untuk EEG
-        # dan sequence 15360 timesteps langsung masuk Mamba -> gradient vanishing
-        #
-        # Solusi: 2-stage strided conv untuk downsample 32x
-        #   Stage 1: 15360 -> 1920 (stride=8, kernel=16 = 31ms, cukup untuk 1 siklus alpha)
-        #   Stage 2: 1920  -> 480  (stride=4, kernel=8)
-        # Hasil: 480 token masuk Mamba, jauh lebih mudah dioptimasi
         half_d = d_model // 2
         self.input_projection = nn.Sequential(
             # Stage 1: Tangkap fitur lokal EEG (alpha/theta butuh kernel >= 16 samples)

@@ -25,7 +25,7 @@ def evaluate_model_complexity(model, device, input_shape=(1, 7, 15360)):
     
     model.eval()
     with torch.no_grad():
-        # 1. Biarkan thop ngitung Linear & Conv1d 
+        # 1. Thop menghitung Linear & Conv1d 
         macs_thop, params_thop = profile(model, inputs=(dummy_input,), verbose=False)
         
         # 2. Total parameter sesuai model
