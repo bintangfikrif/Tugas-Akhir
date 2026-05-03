@@ -18,44 +18,47 @@ from config import Config
 
 def evaluate_model_complexity(model, device, input_shape=(1, 7, 15360)):
     print("\n" + "="*60)
-    print("📊 EVALUASI KOMPLEKSITAS KOMPUTASI (HYBRID ESTIMATION)")
+    print("📊 EVALUASI KOMPLEKSITAS KOMPUTASI")
     print("="*60)
     
     dummy_input = torch.randn(input_shape).to(device)
     
     model.eval()
     with torch.no_grad():
-        # 1. Biarkan thop ngitung apa yang dia bisa (Conv & Linear)
+        # 1. Biarkan thop ngitung Linear & Conv1d 
         macs_thop, params_thop = profile(model, inputs=(dummy_input,), verbose=False)
         
-        # 2. Mengambil parameter asli dari model (models.py)
-        params_asli = model.get_num_params()
+        # 2. Total parameter sesuai model
+        total_params = model.get_num_params()
         
-        # 3. Cari tau berapa parameter Mamba yang tidak dihitung thop
-        params_mamba_hilang = max(0, params_asli - params_thop)
+        # 3. Hitung MACs Inti Mamba menggunakan rumus (9 * B * L * D * N) / 2
+        B = 1 # Batch size inference
+        L = 480 # Sequence length setelah 2 tahap strided conv1d (15360 / 8 / 4)
+        D = Config.MAMBA_D_MODEL # 32
+        N = Config.MAMBA_D_STATE # 16
         
-        # 4. Estimasi MACs Mamba: Parameter yang hilang dikali Sequence Length masuk Mamba (480)
-        # 15360 / 8 (stride1) / 4 (stride2) = 480
-        sequence_length = 480 
-        macs_mamba_estimasi = params_mamba_hilang * sequence_length
+        # Hitung FLOPs untuk 1 layer Mamba, lalu kalikan jumlah layer
+        flops_mamba_core_per_layer = 9 * B * L * D * N
+        total_flops_mamba_core = flops_mamba_core_per_layer * Config.MAMBA_N_LAYERS
         
-        # 5. Totalin semuanya
-        total_macs = macs_thop + macs_mamba_estimasi
-        total_params = params_asli
+        # Konversi FLOPs ke MACs (dibagi 2)
+        macs_mamba_core = total_flops_mamba_core / 2
+        
+        # 4. Total MACs = MACs Thop (Linear/Conv) + MACs Mamba Core
+        total_macs = macs_thop + macs_mamba_core
     
     # Convert ke format human-readable
     gflops = total_macs / 1e9  # Convert ke Giga FLOPs
     params_million = total_params / 1e6  # Convert ke Millions
     
-    # Format string
     macs_str = f"{total_macs / 1e6:.3f}M"
     params_str = f"{total_params / 1e3:.3f}K"
     
     print(f"\n📈 Hasil Evaluasi:")
     print(f"   ├─ Jumlah Parameter: {params_str} ({params_million:.6f}M)")
-    print(f"   ├─ MACs (Estimasi): {macs_str}")
+    print(f"   ├─ MACs: {macs_str}")
     print(f"   └─ GFLOPs: {gflops:.6f}")
-        
+    
     return gflops, params_million, macs_str, params_str
 
 def plot_confusion_matrix(y_true, y_pred, epoch, fold, phase='val', save_dir='confusion_matrices', labels=None, class_names=None):
