@@ -281,15 +281,12 @@ def run_full_profile():
     print(f"  float32 (default)  : {format_bytes(fp32)}")
     print(f"  float16 (half)     : {format_bytes(fp16)}")
     print(f"  int8 (quantized)   : {format_bytes(int8)}")
-    print("  * Overhead metadata pickle ~beberapa KB (diabaikan)")
 
     # ── 3. Activation Memory ───────────────────────────────────
     print("\n⚡ ACTIVATION MEMORY (inference, batch=1)")
     try:
         act_mem = estimate_activation_memory(model, INPUT_SHAPE, device)
         print(f"  Total activations  : {format_bytes(act_mem)}")
-        print("  ⚠️  Mamba custom CUDA kernel mungkin ada aktivasi tambahan")
-        print("     di luar PyTorch graph — angka ini adalah lower bound.")
     except Exception as e:
         act_mem = 0
         print(f"  Gagal diukur via hooks: {e}")
@@ -315,7 +312,6 @@ def run_full_profile():
     print(f"     Gradients       : {format_bytes(grad_mem)}")
     print(f"     Adam states     : {format_bytes(adam_mem)}")
     print(f"     TOTAL estimasi  : {format_bytes(train_mem)}")
-    print(f"     (+ PyTorch framework overhead ~100–300 MB)")
 
     # ── 5. GFLOPs via hybrid method ────────────────────────────
     gflops, params_m, macs_str, params_str = evaluate_model_complexity(

@@ -81,11 +81,7 @@ def estimate_file_size(model):
     return size_fp32, size_fp16, size_int8
 
 
-def estimate_activation_memory(model, img_shape, psg_shape, dtype=torch.float32):
-    """
-    Estimasi memori untuk activations (intermediate feature maps)
-    saat inference (forward pass) menggunakan hooks.
-    """
+def estimate_activation_memory(model, img_shape, psg_shape, device, dtype=torch.float32):
     activation_sizes = []
     hooks = []
 
@@ -104,8 +100,8 @@ def estimate_activation_memory(model, img_shape, psg_shape, dtype=torch.float32)
 
     model.eval()
     with torch.no_grad():
-        dummy_img = torch.randn(*img_shape, dtype=dtype)
-        dummy_psg = torch.randn(*psg_shape, dtype=dtype)
+        dummy_img = torch.randn(*img_shape, dtype=dtype).to(device)
+        dummy_psg = torch.randn(*psg_shape, dtype=dtype).to(device)
         _ = model(dummy_img, dummy_psg)
 
     for h in hooks:
