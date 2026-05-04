@@ -2,11 +2,13 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
+# ── Suppress deprecation warning untuk pretrained ──────────
 import warnings
 warnings.filterwarnings("ignore")
 
+
 # ==============================================================
-# 1. DEFINISI MODEL
+# 1. DEFINISI MODEL 
 # ==============================================================
 
 class MultimodalFeatureCoupledModel(nn.Module):
@@ -82,6 +84,11 @@ def estimate_file_size(model):
 
 
 def estimate_activation_memory(model, img_shape, psg_shape, device, dtype=torch.float32):
+    """
+    Estimasi memori untuk activations (intermediate feature maps)
+    saat inference (forward pass) menggunakan hooks.
+    device harus sama dengan device tempat model berada.
+    """
     activation_sizes = []
     hooks = []
 
@@ -111,7 +118,7 @@ def estimate_activation_memory(model, img_shape, psg_shape, device, dtype=torch.
     return total_activation
 
 
-def estimate_runtime_memory(model, img_shape, psg_shape):
+def estimate_runtime_memory(model, img_shape, psg_shape, device):
     """
     Estimasi total kebutuhan RAM/VRAM saat runtime:
     - Inference mode  : weights + activations
@@ -120,7 +127,7 @@ def estimate_runtime_memory(model, img_shape, psg_shape):
     total_params, _, _ = count_parameters(model)
     size_fp32, _, _ = estimate_file_size(model)
 
-    activation_mem = estimate_activation_memory(model, img_shape, psg_shape)
+    activation_mem = estimate_activation_memory(model, img_shape, psg_shape, device)
 
     # ── Inference ──────────────────────────────────────────
     inference_mem = size_fp32 + activation_mem
@@ -134,7 +141,6 @@ def estimate_runtime_memory(model, img_shape, psg_shape):
 
 
 def get_per_layer_params(model):
-    """Breakdown parameter per komponen utama."""
     components = {
         "ResNet18 (image encoder)": model.resnet,
         "LSTM (time-series encoder)": model.lstm,
@@ -146,7 +152,6 @@ def get_per_layer_params(model):
         params = sum(p.numel() for p in module.parameters())
         results.append((name, params))
     return results
-
 
 # ==============================================================
 # 3. MAIN — RUN PROFILING
@@ -188,17 +193,17 @@ def main():
     print(f"  int8 (quantized)   : {format_bytes(int8)}")
 
     # ── Activation Memory ──────────────────────────────────
-    activation_mem = estimate_activation_memory(model, IMG_SHAPE, PSG_SHAPE)
+    activation_mem = estimate_activation_memory(model, IMG_SHAPE, PSG_SHAPE, device)
     print(f"\n⚡ ACTIVATION MEMORY (forward pass, batch=1)")
     print(f"  Total activations  : {format_bytes(activation_mem)}")
 
     # ── Runtime Memory ─────────────────────────────────────
-    inference_mem, training_mem, _ = estimate_runtime_memory(model, IMG_SHAPE, PSG_SHAPE)
+    inference_mem, training_mem, _ = estimate_runtime_memory(model, IMG_SHAPE, PSG_SHAPE, device)
     print(f"\n🖥️  ESTIMASI KEBUTUHAN MEMORI RUNTIME")
     print(f"  ── Inference Mode ──────────────────────────────")
     print(f"     Weights (fp32)  : {format_bytes(fp32)}")
     print(f"     Activations     : {format_bytes(activation_mem)}")
-    print(f"     TOTAL           : {format_bytes(inference_mem)}  ← kebutuhan VRAM/RAM minimum")
+    print(f"     TOTAL           : {format_bytes(inference_mem)}")
     print(f"")
     print(f"  ── Training Mode (Adam, fp32) ──────────────────")
     print(f"     Weights         : {format_bytes(fp32)}")
@@ -207,7 +212,7 @@ def main():
     print(f"     Adam states     : {format_bytes(total * 4 * 2)}")
     print(f"     TOTAL           : {format_bytes(training_mem)}")
 
-    # ── GFLOPs via thop  ─────────────────────────
+    # ── GFLOPs via thop (opsional) ─────────────────────────
     print(f"\n📊 GFLOPs")
     try:
         from thop import profile, clever_format
@@ -218,7 +223,7 @@ def main():
         print(f"  MACs (thop)        : {macs_str}  →  {macs/1e9:.4f} GFLOPs")
         print(f"  Params (thop)      : {params_str}")
     except ImportError:
-        print("  thop tidak terinstall")
+        print("  thop tidak terinstall.")
 
 if __name__ == "__main__":
     main()
