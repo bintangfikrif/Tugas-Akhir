@@ -50,7 +50,7 @@ class Config:
     ORDINAL_IMPORTANCE = 1.0  # Weight for ordinal loss
     
     # ==================== Data Augmentation ====================
-    USE_AUGMENTATION = True
+    USE_AUGMENTATION = False
     AUG_GAUSSIAN_NOISE_STD = 0.01
     AUG_AMPLITUDE_SCALE_RANGE = (0.9, 1.1)
 

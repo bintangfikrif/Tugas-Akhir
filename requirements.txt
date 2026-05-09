@@ -1,6 +1,16 @@
-torch
+torch==2.4.0
+torchvision==0.19.0
+torchaudio==2.4.0
+torch_geometric
+torchinfo
 numpy
 pandas
 mne
 matplotlib
 scikit-learn
+seaborn
+causal-conv1d==1.4.0
+mamba-ssm==2.2.2
+wandb
+einops
+thop
