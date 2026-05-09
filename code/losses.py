@@ -6,10 +6,6 @@ from collections import Counter
 from config import Config
 
 class WeightedCrossEntropyLoss(nn.Module):
-    """
-    Fungsi Loss utama sesuai Proposal Tugas Akhir.
-    Menggunakan bobot untuk menangani ketidakseimbangan kelas.
-    """
     def __init__(self, weight=None):
         super().__init__()
         self.weight = weight

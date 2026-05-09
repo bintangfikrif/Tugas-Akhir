@@ -6,7 +6,6 @@ import torchvision.models as models
 import warnings
 warnings.filterwarnings("ignore")
 
-
 # ==============================================================
 # 1. DEFINISI MODEL 
 # ==============================================================
@@ -84,11 +83,6 @@ def estimate_file_size(model):
 
 
 def estimate_activation_memory(model, img_shape, psg_shape, device, dtype=torch.float32):
-    """
-    Estimasi memori untuk activations (intermediate feature maps)
-    saat inference (forward pass) menggunakan hooks.
-    device harus sama dengan device tempat model berada.
-    """
     activation_sizes = []
     hooks = []
 
@@ -119,11 +113,6 @@ def estimate_activation_memory(model, img_shape, psg_shape, device, dtype=torch.
 
 
 def estimate_runtime_memory(model, img_shape, psg_shape, device):
-    """
-    Estimasi total kebutuhan RAM/VRAM saat runtime:
-    - Inference mode  : weights + activations
-    - Training mode   : weights + activations + gradients + optimizer states (Adam)
-    """
     total_params, _, _ = count_parameters(model)
     size_fp32, _, _ = estimate_file_size(model)
 
