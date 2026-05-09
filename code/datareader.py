@@ -126,10 +126,6 @@ class EEGDataset(Dataset):
             raw = mne.io.read_raw_edf(info['file_path'], preload=True, verbose='error')
             raw.pick(CHANNELS)
             raw.crop(tmin=info['start_sec'], tmax=info['start_sec'] + self.window_sec, include_tmax=False)
-
-            if getattr(Config, 'USE_DOWNSAMPLE', False):
-                raw.resample(Config.DOWNSAMPLE_RATE, npad='auto')
-
             signal = raw.get_data() * 1e6  # V → μV
 
             # Normalisasi
@@ -154,7 +150,7 @@ class EEGDataset(Dataset):
                 return signal, torch.tensor([info['label'] / Config.KSS_MAX], dtype=torch.float32)
 
         except Exception:
-            sr = Config.DOWNSAMPLE_RATE if getattr(Config, 'USE_DOWNSAMPLE', False) else Config.ORIGINAL_SAMPLE_RATE
+            sr = Config.SAMPLE_RATE
             dummy_len = int(self.window_sec * sr)
             return torch.zeros((Config.IN_CHANNELS, dummy_len)), torch.tensor([0.0], dtype=torch.float32)
 

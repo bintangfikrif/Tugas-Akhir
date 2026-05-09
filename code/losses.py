@@ -38,8 +38,42 @@ def compute_inverse_weight(labels, num_classes=None):
     
     weights = []
     for i in range(num_classes):
-        count = counts.get(i, 1) # Hindari pembagian dengan nol
+        count = counts.get(i, 1) 
         weight = total_samples / (num_classes * count)
         weights.append(weight)
         
     return torch.tensor(weights, dtype=torch.float32)
+
+def compute_regression_metrics(predictions, targets):
+    # Balikkan ke skala KSS asli (1-9) sebelum dihitung
+    preds_kss = predictions * Config.KSS_MAX
+    targets_kss = targets * Config.KSS_MAX
+    
+    # Hitung MAE (Mean Absolute Error)
+    mae = torch.mean(torch.abs(preds_kss - targets_kss))
+    
+    # Hitung RMSE (Root Mean Squared Error)
+    mse = torch.mean((preds_kss - targets_kss)**2)
+    rmse = torch.sqrt(mse)
+    
+    return mae.item(), rmse.item()
+
+def get_classification_stats(predictions, targets, threshold=5.5):
+    """
+    Mengubah hasil regresi kembali ke biner untuk hitung akurasi/confusion matrix.
+    Threshold 5.5: <= 5.5 Alert (0), > 5.5 Drowsy (1)
+    """
+    # Balikkan ke skala 1-9
+    preds_kss = predictions * Config.KSS_MAX
+    targets_kss = targets * Config.KSS_MAX
+    
+    # Thresholding menjadi biner (0 atau 1)
+    preds_binary = (preds_kss > threshold).long()
+    targets_binary = (targets_kss > threshold).long()
+    
+    # Hitung akurasi sederhana
+    correct = (preds_binary == targets_binary).sum().item()
+    total = targets_binary.size(0)
+    acc = correct / total
+    
+    return acc, preds_binary, targets_binary
