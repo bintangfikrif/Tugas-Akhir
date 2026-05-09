@@ -1,0 +1,22 @@
+\clearpage
+\phantomsection% 
+\addcontentsline{toc}{chapter}{ABSTRAK}
+\thispagestyle{fancy}
+
+\begin{center}
+	\large \bfseries \MakeUppercase{Abstrak}\\
+	\normalsize \normalfont {\thetitle}\\
+	\normalsize \normalfont {\theauthor}\\
+	\bigskip
+	
+	\normalsize \normalfont \justifying \singlespacing
+	Kantuk saat berkendara merupakan faktor risiko utama kecelakaan lalu lintas yang sulit dinilai secara mandiri oleh pengemudi. Penelitian ini merancang dan mengevaluasi arsitektur model Mamba berbasis \textit{Selective State Space Model} (SSM) untuk mendeteksi tingkat kantuk dari sinyal \textit{Electroencephalogram} (EEG) dan \textit{Electrooculogram} (EOG) menggunakan dataset DROZY (36 rekaman, 14 subjek). Model dievaluasi menggunakan \textit{subject-wise 5-fold cross-validation} dengan segmentasi \textit{sliding window} 30 detik dan normalisasi \textit{Z-Score} per-subjek. Studi perbandingan dilakukan antara dua skenario pelatihan: klasifikasi biner langsung menggunakan \textit{Weighted Cross-Entropy Loss}, dan regresi nilai \textit{Karolinska Sleepiness Scale} (KSS) kontinu (1-9) yang dikonversi ke keputusan biner pada tahap inferensi. Hasil menunjukkan bahwa arsitektur Mamba yang dikembangkan sangat ringan secara komputasi, dengan hanya 62.930 parameter dan beban operasi 0,01 GFLOPS. Pada evaluasi performa, pendekatan klasifikasi (akurasi rata-rata 66,00\% $\pm$ 8,26\%; \textit{F1-Score} 0,5844 $\pm$ 0,1319) secara konsisten mengungguli pendekatan regresi (akurasi 57,51\% $\pm$ 6,48\%; \textit{F1-Score} 0,4676 $\pm$ 0,1566) dalam mendeteksi kondisi \textit{Drowsy}, meskipun dengan risiko \textit{false alarm} yang lebih tinggi. Tingginya standar deviasi antar \textit{fold} mengindikasikan bahwa performa masih sangat dipengaruhi oleh variabilitas sinyal antarindividu, yang menjadi tantangan utama yang perlu diatasi pada penelitian selanjutnya.
+	\par
+
+    \vspace{20pt}
+	\raggedright \textbf{Kata Kunci: Deteksi Kantuk, \textit{Electroencephalogram}, \textit{Electrooculogram}, Model Mamba, Klasifikasi.}
+	
+	\vfill
+	
+\end{center}
+\clearpage

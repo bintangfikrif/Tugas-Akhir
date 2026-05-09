@@ -1,0 +1,21 @@
+\newpage
+\chapter{KESIMPULAN DAN SARAN} \label{Bab V}
+
+\section{Kesimpulan}
+Berdasarkan hasil pengujian, evaluasi, dan analisis yang telah dilakukan pada penelitian ini, dapat ditarik kesimpulan untuk menjawab rumusan masalah sebagai berikut:
+
+\begin{enumerate}
+    \item Arsitektur Mamba berhasil dirancang untuk memproses sinyal EEG dan EOG dari dataset DROZY. Untuk menjaga objektivitas studi perbandingan, pemodelan ini diinisiasi secara terpisah antara skenario regresi dan klasifikasi tanpa adanya pembagian bobot (\textit{weight sharing}). Secara teknis, model ini terbukti sangat efisien dengan total 62.930 parameter dan beban komputasi 0,01 GFLOPS.
+    
+    \item Hasil pengujian 5-\textit{Fold Cross-Validation} membuktikan adanya perbedaan karakteristik performa yang kontras antara kedua pendekatan. Cabang regresi (Akurasi 57,51\%; F1-Score 0,4676) memiliki kecenderungan yang sangat berhati-hati sehingga efektif dalam meminimalkan alarm palsu, namun lambat dalam mendeteksi gejala awal kantuk. Sebaliknya, cabang klasifikasi biner (Akurasi 66,00\%; F1-Score 0,5844) bersifat lebih agresif dan andal dalam menangkap kondisi mengantuk. Tingginya standar deviasi performa pada kedua model turut membuktikan bahwa akurasi prediksi sangat bergantung pada variabilitas sinyal antar-subjek. Meskipun model klasifikasi rentan terhadap \textit{overfitting} pada batas transisi fase kantuk, pendekatannya dinilai lebih relevan untuk memprioritaskan keselamatan berkendara.
+\end{enumerate}
+
+\section{Saran}
+
+Berdasarkan hasil penelitian dan analisis yang telah dilakukan, terdapat beberapa saran yang dapat diajukan untuk pengembangan penelitian selanjutnya guna meningkatkan performa dan fungsionalitas sistem deteksi kantuk:
+
+\begin{enumerate}
+    \item Optimasi Pembobotan Multi-Task Learning: Melakukan eksperimen lebih lanjut pada pembobotan \textit{Loss Function} antara cabang regresi dan klasifikasi untuk menemukan titik keseimbangan terbaik antara akurasi dan stabilitas prediksi.
+    \item Penggunaan Dataset Skala Besar: Disarankan untuk melakukan pelatihan ulang menggunakan \textit{dataset} dengan jumlah sampel dan durasi rekaman yang lebih besar. Keterbatasan jumlah data pada \textit{dataset} DROZY menjadi kendala utama bagi model untuk mempelajari pola transisi kantuk secara lebih mendalam. Penambahan volume data diharapkan dapat meningkatkan kemampuan generalisasi model Mamba sehingga performa prediksi menjadi lebih stabil dan akurat.
+    \item Eksplorasi Fitur Domain Frekuensi sebagai Input Pelengkap: Sebagai alternatif augmentasi representasi, penelitian selanjutnya dapat mengeksplorasi penggabungan fitur \textit{Power Spectral Density} (PSD) dari pita frekuensi EEG (delta, theta, alpha, beta) sebagai fitur tambahan yang dikoncatenasikan ke vektor representasi setelah AdaptiveAvgPool1D, tanpa menggantikan input sekuensial mentah. Pendekatan hybrid ini mempertahankan justifikasi penggunaan Mamba sebagai sequential model, sekaligus memberikan informasi frekuensial eksplisit yang relevan untuk klasifikasi kantuk.
+\end{enumerate}

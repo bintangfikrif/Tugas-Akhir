@@ -1,0 +1,40 @@
+{
+  "os":  "Linux-6.6.113+-x86_64-with-glibc2.35",
+  "python":  "CPython 3.12.13",
+  "startedAt":  "2026-05-05T14:35:46.445602Z",
+  "program":  "/content/Tugas-Akhir/code/train.py",
+  "codePath":  "code/train.py",
+  "codePathLocal":  "train.py",
+  "git":  {
+    "remote":  "https://github.com/bintangfikrif/Tugas-Akhir.git",
+    "commit":  "210fd2a77e4f9cb69cd5fbfa5f08c80d5de154fe"
+  },
+  "email":  "bntngfkr@gmail.com",
+  "root":  "/content/Tugas-Akhir/code",
+  "host":  "3676e703efb8",
+  "executable":  "/usr/bin/python3",
+  "cpu_count":  1,
+  "cpu_count_logical":  2,
+  "gpu":  "Tesla T4",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "120942624768",
+      "used":  "56006176768"
+    }
+  },
+  "memory":  {
+    "total":  "13605830656"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "Tesla T4",
+      "memoryTotal":  "16106127360",
+      "cudaCores":  2560,
+      "architecture":  "Turing",
+      "uuid":  "GPU-265535f7-07ff-e49f-d49f-6bac46845094"
+    }
+  ],
+  "cudaVersion":  "13.0",
+  "writerId":  "nctjn1dnnfawvyb5w6viehg41cxdy5yu"
+}

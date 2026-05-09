@@ -1,0 +1,75 @@
+\newpage
+\chapter{PENDAHULUAN} \label{Bab I}
+
+\section{Latar Belakang} \label{I.Latar Belakang}
+
+	Kantuk merupakan masalah universal yang berdampak negatif secara signifikan terhadap produktivitas dan yang lebih krusial, keselamatan nyawa manusia. Fenomena ini sering kali dianggap sepele, padahal konsekuensinya bisa sangat fatal terutama dalam konteks transportasi. Dampak nyata dari kondisi ini dapat terlihat jelas pada statistik kecelakaan lalu lintas di Indonesia. Menurut laporan resmi Badan Pusat Statistik, tercatat sebanyak 152.008 kasus kecelakaan yang terjadi sepanjang tahun 2023. Dari sekian banyak insiden tersebut, salah satu faktor utama yang konsisten menjadi penyebab kecelakaan adalah kelelahan atau kantuk yang dialami pengemudi saat berkendara \cite{BPS:STD:2023}. Masalah ini diperparah oleh kegagalan penilaian mandiri (\textit{self-assessment}) oleh para pengemudi. Sebuah studi menunjukkan fakta mengkhawatirkan bahwa 75\% pengemudi sering kali salah menilai kondisi fisik mereka sendiri. Mereka merasa hanya "sedikit lelah" dan masih mampu mengemudi, padahal secara fisiologis mereka sebenarnya sudah berada dalam tingkat kantuk yang berbahaya dan berisiko tinggi mengalami \textit{microsleep} \cite{Gaspar2023}.
+
+    Hingga saat ini, berbagai sistem deteksi kantuk telah dikembangkan untuk memitigasi risiko ini. Sebagian besar teknologi yang beredar di pasaran, seperti sistem berbasis kamera pemantau wajah atau sensor perilaku kendaraan, umumnya bersifat reaktif. Artinya, sistem tersebut baru mendeteksi bahaya dan memberikan peringatan setelah tanda-tanda fisik yang jelas muncul, seperti mata terpejam lama atau kendaraan keluar jalur \cite{Albadawi2022Review}. Pendekatan reaktif tersebut dinilai kurang efektif dalam pencegahan dini, karena jeda waktu antara munculnya tanda fisik dan terjadinya kecelakaan sering kali terlalu singkat. Oleh karena itu, sangat diperlukan metode alternatif yang lebih akurat dan mampu mendeteksi onset kantuk lebih awal sebelum manifestasi fisik yang berbahaya terjadi.
+
+    Untuk mendapatkan kemampuan deteksi dini tersebut, fokus penelitian kini bergeser dari pemantauan perilaku eksternal ke pemantauan sinyal fisiologis internal. Sinyal \textit{electroencephalogram} (EEG) yang merekam aktivitas gelombang otak dan \textit{electrooculogram} (EOG) yang merekam pola gerakan mata, diakui secara luas oleh komunitas ilmiah sebagai indikator kantuk yang paling andal dan objektif \cite{Wang2022}. Keunggulan utama dari penggunaan kombinasi EEG dan EOG adalah kemampuannya untuk menangkap perubahan neurofisiologis yang mendasar seperti peningkatan gelombang Theta atau perlambatan gerakan mata yang terjadi jauh lebih cepat dibandingkan perubahan perilaku fisik yang terlihat kasat mata seperti menguap \cite{Albadawi2022Review}. Validitas penggunaan modalitas ini juga didukung oleh fakta bahwa basis data standar emas (\textit{gold standard}) untuk penelitian kantuk, seperti DROZY, secara spesifik menggunakan sinyal EEG dan EOG sebagai data utamanya untuk penentuan label kantuk \cite{Massoz2016}.
+
+    Meskipun memiliki keunggulan dalam akurasi dan deteksi dini, analisis komputasi terhadap sinyal EEG dan EOG menghadirkan tantangan teknis tersendiri. Dalam beberapa tahun terakhir, model \textit{deep learning} yang telah mapan, khususnya arsitektur berbasis Transformer, telah menunjukkan kinerja yang sangat kuat di banyak bidang pemrosesan data sekuensial. Namun, model-model canggih ini sering kali menghadapi tantangan \textit{trade-off} komputasi yang berat saat harus memproses data sekuens yang sangat panjang, seperti rekaman sinyal EEG kontinu. Hal ini disebabkan oleh mekanisme \textit{self-attention} pada arsitektur Transformer klasik yang memiliki kompleksitas kuadratik ($O(n^{2})$). Kompleksitas ini membuat beban komputasi dan penggunaan memori meningkat secara drastis seiring bertambahnya panjang data yang diproses \cite{Gu2023}. Mengingat sinyal EEG direkam dengan frekuensi tinggi dan dapat berlangsung lama, serta fakta bahwa transisi menuju kantuk terjadi secara bertahap dalam rentang waktu yang panjang, diperlukan sebuah model alternatif yang tidak hanya akurat, tetapi juga mampu secara efisien menangkap dependensi temporal jangka panjang tanpa membebani sumber daya komputasi \cite{Zhou2025}.
+
+    Tinjauan literatur mendalam mengidentifikasi adanya kesenjangan penelitian yang kritis untuk mengatasi hambatan tersebut. Arsitektur Mamba hadir sebagai solusi potensial berupa \textit{State Space Model} (SSM) baru yang sangat efisien. Mamba menawarkan keunggulan kompleksitas linear $O(n)$ terhadap panjang sekuens, yang memungkinkannya mencapai \textit{throughput} inferensi hingga 5× lebih cepat dibandingkan Transformer, menjadikannya kandidat ideal untuk pemrosesan sinyal biomedis yang panjang \cite{Gu2023}. Model yang baru muncul pada akhir tahun 2023 ini telah menunjukkan keberhasilan empiris pada berbagai tugas pemrosesan EEG lainnya, seperti klasifikasi tahap tidur \cite{Zhou2025} dan \textit{emotion recognition} \cite{Chen2023FACED}. Khusus untuk deteksi kantuk, baru tercatat satu studi awal yang menerapkan Mamba pada dataset SEED-VIG dengan capaian akurasi 83,24\% \cite{Siddhad2024}. Namun, eksplorasi terkait penerapan keunggulan arsitektur Mamba pada dataset standar DROZY saat ini masih sangat terbatas, meskipun DROZY telah menjadi benchmark yang paling banyak digunakan dalam studi kantuk dengan lebih dari 41 sitasi. Lebih spesifik lagi, analisis kombinasi sinyal EEG dan EOG menggunakan arsitektur Mamba juga belum banyak diteliti secara komprehensif, padahal kombinasi kedua modalitas ini telah terbukti superior dalam berbagai studi terdahulu \cite{Sommer2015}.
+
+	Di samping kebutuhan eksplorasi arsitektur dan kombinasi modalitas tersebut, pendekatan pemodelan dalam mengukur tingkat kantuk juga menjadi isu krusial. Mayoritas penelitian sebelumnya menggunakan pendekatan klasifikasi diskrit sejak awal fase pelatihan, yang hingga kini menjadi standar umum dalam mendeteksi kondisi pengemudi. Namun, secara fisiologis, kantuk didefinisikan sebagai hilangnya efisiensi pemrosesan kortikal secara progresif, di mana transisi ini menyebabkan penurunan dan hilangnya fungsi kognitif secara bertahap \cite{slater2008definition}. Meskipun pemodelan klasifikasi diskrit mampu memberikan keputusan yang tegas, pemetaan proses yang sangat dinamis ini ke dalam label kategori secara langsung berpotensi menyamarkan informasi penting mengenai gradasi kelelahan pengemudi. 
+
+	Sebagai alternatif, pemodelan dengan keluaran kontinu memiliki keunggulan teoritis untuk menangkap resolusi deteksi secara gradual dan dinilai krusial untuk mendeteksi onset kantuk lebih awal \cite{Wang2022}. Nilai prediksi kontinu dari model regresi ini nantinya tetap dipetakan menggunakan ambang batas (\textit{threshold}) tertentu untuk menghasilkan keluaran klasifikasi biner pada tahap inferensi. Mengingat kedua pendekatan ini memiliki rasionalisasi masing-masing, sebuah studi perbandingan yang komprehensif antara model klasifikasi diskrit (biner) standar dengan model klasifikasi biner yang diturunkan dari hasil regresi sangat diperlukan. Perbandingan ini bertujuan untuk mengevaluasi secara objektif metode pelatihan mana yang menghasilkan prediksi akhir paling optimal, stabil, dan representatif dalam mendeteksi tingkat kantuk.
+
+    Berdasarkan seluruh uraian tersebut, penelitian ini bertujuan untuk mengisi kesenjangan yang ada dengan berfokus pada dua aspek utama: validasi pemanfaatan arsitektur Mamba untuk efisiensi pemodelan sekuens panjang, serta studi perbandingan antara model klasifikasi biner standar dengan model klasifikasi biner berbasis regresi. Sistem deteksi yang dikembangkan akan dievaluasi secara komprehensif pada dataset DROZY menggunakan kombinasi sinyal EEG dan EOG. Melalui studi komparatif ini, diharapkan penelitian ini tidak hanya mampu membuktikan efisiensi komputasi Mamba pada pemrosesan sinyal fisiologis, tetapi juga menemukan pendekatan pelatihan yang paling optimal. Hal ini diharapkan dapat mendorong pengembangan teknologi deteksi kantuk yang lebih responsif dan akurat demi menyelamatkan ribuan nyawa di jalan raya setiap tahunnya.
+
+\section{Rumusan Masalah} \label{I.Rumusan Masalah}
+
+Adapun rumusan masalah dari penelitian ini adalah sebagai berikut:
+
+\begin{enumerate}
+	\item Bagaimana merancang arsitektur model berbasis Mamba untuk deteksi tingkat kantuk berbasis sinyal fisiologis EEG dan EOG pada dataset DROZY?
+	\item Bagaimana perbandingan kinerja antara model klasifikasi biner standar dengan model klasifikasi biner berbasis regresi dalam mendeteksi fase \textit{Alert} dan \textit{Drowsy}?
+\end{enumerate}
+
+
+\section{Tujuan Penelitian} \label{I.Tujuan}
+
+Adapun tujuan dari penelitian ini adalah sebagai berikut:
+
+\begin{enumerate}
+	\item Merancang dan mengimplementasikan arsitektur model berbasis Mamba untuk deteksi tingkat kantuk berbasis sinyal fisiologis EEG dan EOG pada dataset DROZY.
+	\item Mengevaluasi dan membandingkan kinerja antara model klasifikasi biner standar dengan model klasifikasi biner berbasis regresi dalam mendeteksi fase \textit{Alert} dan \textit{Drowsy}, guna menentukan pendekatan pelatihan yang paling optimal.
+\end{enumerate}
+
+
+\section{Batasan Masalah} \label{I.Batasan}
+Hal-hal berikut adalah batasan masalah dari penelitian ini:
+\begin{enumerate}
+	\item Penelitian ini dibatasi pada pemanfaatan sinyal fisiologis berupa EEG dan EOG yang diekstraksi dari rekaman \textit{Polysomnography} (PSG) pada dataset DROZY, tanpa melibatkan data visual atau pendekatan multimodal berbasis kamera.
+	\item Arsitektur \textit{deep learning} yang dikembangkan berfokus pada penggunaan model Mamba sebagai pemodel sekuens temporal. Perbandingan dengan penelitian \textit{state-of-the-art} (SOTA), khususnya yang menggunakan pendekatan multimodal, tidak dimaksudkan sebagai pembandingan akurasi secara langsung, melainkan sebagai konteks untuk mendiskusikan \textit{trade-off} antara kompleksitas sistem dan efisiensi komputasi.
+	\item Penelitian ini berfokus pada pemrosesan dan analisis data yang telah direkam (\textit{offline}). Penelitian ini tidak mencakup perancangan perangkat keras, integrasi sensor tambahan, maupun implementasi sistem deteksi kantuk secara \textit{real-time}.
+\end{enumerate}
+
+\section{Manfaat Penelitian} \label{I.Manfaat}
+Manfaat dilaksanakannya penelitian ini adalah sebagai berikut.
+\begin{enumerate}
+	\item Memberikan kontribusi ilmiah sebagai penerapan arsitektur Mamba pertama untuk deteksi kantuk menggunakan dataset DROZY.
+	\item Memvalidasi keunggulan efisiensi komputasi Mamba untuk sinyal gabungan EEG dan EOG.
+	\item Berkontribusi pada pengembangan teknologi deteksi kantuk yang lebih akurat dan dini.
+\end{enumerate}
+
+
+\section{Sistematika Penulisan} \label{I.Sistematika}
+Gambaran umum isi laporan penelitian ini dijelaskan melalui sistematika penulisan berikut:
+
+\subsection*{Bab I}
+Bab I berisikan tentang latar belakang penelitian, rumusan masalah, tujuan penelitian, batasan masalah, manfaat penelitian, serta sistematika penluisan laporan Tugas Akhir. \par
+
+\subsection*{Bab II}
+Bab II membahas mengenai tinjauan pustaka dari penelitan terdahulu dan dasar teori yang berkaitan dengan penelitian ini.
+
+\subsection*{Bab III}
+Bab III berisikan metode penelitian yang akan dilakukan. Berisikan penjelasan mengenai arsitektur Mamba sebagai metode untuk mendeteksi kantuk dengan sinyal EEG dan EOG.
+
+\subsection*{Bab IV}
+Bab IV berisikan hasil dari pengembangan model yang dibuat berserta analisis dan evaluasi dari model yang dilakukan.
+
+\subsection*{Bab V}
+Bab V berisikan kesimpulan hasil dari penelitian yang telah dilakukan serta saran akan pengembangan penelitian kedepannya.

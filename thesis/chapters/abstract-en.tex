@@ -1,0 +1,21 @@
+\clearpage
+\phantomsection% 
+\addcontentsline{toc}{chapter}{ABSTRACT}
+\thispagestyle{fancy}
+
+\begin{center}
+	\large \bfseries \MakeUppercase{Abstract}\\
+	\normalsize \normalfont {\thetitleEN}\\
+	\normalsize \normalfont {\theauthor}\\
+	\bigskip
+	
+	\normalsize \normalfont \justifying \singlespacing
+	Drowsiness while driving is a primary risk factor for traffic accidents that is difficult for drivers to self-assess. This study designs and evaluates a Mamba model architecture based on the Selective State Space Model (SSM) to detect drowsiness levels from EEG and EOG signals using the DROZY dataset (36 recordings, 14 subjects). The model was evaluated using subject-wise 5-fold cross-validation with 30-second sliding window segmentation and per-subject Z-score normalization. A comparative study was conducted between two training scenarios: direct binary classification using Weighted Cross-Entropy Loss, and continuous KSS value regression (1--9) converted into binary decisions at the inference stage. The results indicate that the developed Mamba architecture is highly computationally efficient, featuring only 62,930 parameters and an operational load of 0.01 GFLOPS. In performance evaluation, the classification approach (average accuracy 66.00\% $\pm$ 8.26\%; F1-Score 0.5844 $\pm$ 0.1319) consistently outperformed the regression approach (accuracy 57.51\% $\pm$ 6.48\%; F1-Score 0.4676 $\pm$ 0.1566) in detecting drowsy conditions, albeit with a higher risk of false alarms. The high standard deviation across folds suggests that performance remains significantly influenced by inter-individual signal variability, posing a primary challenge to be addressed in future research. \par
+    
+    \vspace{20pt}
+	\raggedright\textbf{Keywords: Drowsiness Detection, Electroencephalogram, Electrooculogram, Mamba Model, Classification}
+	
+	\vfill
+	
+\end{center}
+\clearpage

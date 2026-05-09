@@ -1,0 +1,166 @@
+_wandb:
+    value:
+        cli_version: 0.26.1
+        e:
+            9n5sun0awvqli05vpy175r8gqeo81r2x:
+                codePath: code/train.py
+                codePathLocal: train.py
+                cpu_count: 1
+                cpu_count_logical: 2
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "120942624768"
+                        used: "56666923008"
+                email: bntngfkr@gmail.com
+                executable: /usr/bin/python3
+                git:
+                    commit: 3fc221ba8cd687bbdb0920eff549066e1592acd2
+                    remote: https://github.com/bintangfikrif/Tugas-Akhir.git
+                gpu: Tesla T4
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Turing
+                      cudaCores: 2560
+                      memoryTotal: "16106127360"
+                      name: Tesla T4
+                      uuid: GPU-a7d42882-195e-72c0-8f7e-fc558ee8bb4d
+                host: fb7b0d68eaa3
+                memory:
+                    total: "13605826560"
+                os: Linux-6.6.113+-x86_64-with-glibc2.35
+                program: /content/Tugas-Akhir/code/Tugas-Akhir/code/train.py
+                python: CPython 3.12.13
+                root: /content/Tugas-Akhir/code/Tugas-Akhir/code
+                startedAt: "2026-05-03T10:11:32.219622Z"
+                writerId: 9n5sun0awvqli05vpy175r8gqeo81r2x
+        m: []
+        python_version: 3.12.13
+        t:
+            "1":
+                - 1
+                - 5
+                - 11
+                - 12
+                - 49
+                - 53
+                - 71
+            "2":
+                - 1
+                - 5
+                - 11
+                - 12
+                - 49
+                - 53
+                - 71
+            "3":
+                - 2
+                - 3
+                - 13
+                - 16
+                - 62
+            "4": 3.12.13
+            "5": 0.26.1
+            "6": 4.38.2
+            "10":
+                - 20
+            "12": 0.26.1
+            "13": linux-x86_64
+AUG_AMPLITUDE_SCALE_RANGE:
+    value:
+        - 0.9
+        - 1.1
+AUG_GAUSSIAN_NOISE_STD:
+    value: 0.01
+BATCH_SIZE:
+    value: 32
+CHECKPOINT_DIR:
+    value: checkpoints
+CURRENT_FOLD:
+    value: 0
+DATA_DIR:
+    value: psg
+DOWNSAMPLE_RATE:
+    value: 128
+EARLY_STOPPING_PATIENCE:
+    value: 10
+EPOCHS:
+    value: 50
+IN_CHANNELS:
+    value: 7
+KSS_MAX:
+    value: 9
+LEARNING_RATE:
+    value: 0.0001
+LOG_INTERVAL:
+    value: 10
+LOSS_TYPE:
+    value: ce
+MAMBA_D_CONV:
+    value: 4
+MAMBA_D_MODEL:
+    value: 32
+MAMBA_D_STATE:
+    value: 16
+MAMBA_EXPAND:
+    value: 2
+MAMBA_N_LAYERS:
+    value: 4
+MODEL_NAME:
+    value: mamba
+N_SPLITS:
+    value: 5
+NORMALIZATION:
+    value: subject
+NUM_CLASSES:
+    value: 2
+NUM_WORKERS:
+    value: 2
+ORDINAL_IMPORTANCE:
+    value: 1
+ORIGINAL_SAMPLE_RATE:
+    value: 512
+OUTPUT_DIM:
+    value: 1
+SAMPLE_RATE:
+    value: 512
+SAVE_BEST_ONLY:
+    value: true
+SCHEDULER_FACTOR:
+    value: 0.5
+SCHEDULER_PATIENCE:
+    value: 3
+STRIDE_SEC:
+    value: 10
+TASK_TYPE:
+    value: classification
+USE_AUGMENTATION:
+    value: true
+USE_CUDA:
+    value: true
+USE_DOWNSAMPLE:
+    value: false
+USE_SCHEDULER:
+    value: true
+USE_WANDB:
+    value: true
+USE_WARMUP:
+    value: false
+WANDB_PROJECT:
+    value: Drowsiness-Mamba-DROZY
+WARMUP_EPOCHS:
+    value: 5
+WARMUP_START_FACTOR:
+    value: 0.01
+WEIGHT_DECAY:
+    value: 0.01
+WINDOW_SEC:
+    value: 30
+model_gflops:
+    value: 0.010337856
+model_macs_str:
+    value: 10.338M
+model_params_million:
+    value: 0.06293
+model_params_str:
+    value: 62.930K

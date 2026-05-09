@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from datareader import EEGDataset, collate_fn
 from models import MambaDrowsinessDetector
-from losses import MAELoss, WeightedCrossEntropyLoss, compute_inverse_weight, compute_regression_metrics, get_classification_stats
+from losses import MAELoss, WeightedCrossEntropyLoss, compute_inverse_weight
 from config import Config
 from utils import (
     evaluate_model_complexity, plot_confusion_matrix,
