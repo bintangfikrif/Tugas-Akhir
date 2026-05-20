@@ -153,14 +153,14 @@ Dataset sudah tersedia dalam folder `code/psg/` dan `code/label/`:
 code/
 ├── psg/              # 39 EDF files (raw PSG data)
 ├── label/
-│   └── labels.csv    # CSV dengan kolom: [filename, kss_score, subject_id, ...]
+│   └── labels.csv    # CSV dengan kolom: [filename, kss_score]
 ```
 
-**Format labels.csv** (example):
+**Format labels.csv**:
 ```
-filename,kss_score,subject_id,fold
-1-1.edf,3,1,0
-1-2.edf,5,1,1
+filename,kss_score
+1-1.edf,3
+1-2.edf,5
 ...
 ```
 
