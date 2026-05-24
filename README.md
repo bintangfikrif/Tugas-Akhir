@@ -191,6 +191,31 @@ python train.py
 Untuk offline mode (tanpa login), set di [code/config.py](code/config.py):
 ```python
 os.environ['WANDB_MODE'] = 'offline'
+
+```
+## How to Cite
+
+Jika repositori ini digunakan pada riset atau publikasi, mohon cantumkan sitasi tugas akhir ini.
+
+### Format IEEE
+```text
+B. F. Fauzan, "Deteksi Tingkat Kantuk Berdasarkan Sinyal EEG dan EOG Menggunakan Model Mamba: Studi Perbandingan Regresi dan Klasifikasi," Skripsi, Program Studi Teknik Informatika, Institut Teknologi Sumatera, 2026.
+```
+
+### Format APA
+```text
+Fauzan, B. F. (2026). Deteksi Tingkat Kantuk Berdasarkan Sinyal EEG dan EOG Menggunakan Model Mamba Menggunakan Model Mamba: Studi Perbandingan Regresi dan Klasifikasi (Skripsi). Institut Teknologi Sumatera.
+```
+
+### BibTeX
+```bibtex
+@mastersthesis{fauzan2026deteksi,
+  author = {Fauzan, Bintang Fikri},
+  title = {Deteksi Tingkat Kantuk Berdasarkan Sinyal EEG dan EOG Menggunakan Model Mamba Menggunakan Model Mamba: Studi Perbandingan Regresi dan Klasifikasi},
+  school = {Institut Teknologi Sumatera},
+  year = {2026},
+  type = {Skripsi}
+}
 ```
 
 ---
