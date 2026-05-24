@@ -1,4 +1,4 @@
-# Deteksi Tingkat Kantuk Berdasarkan Sinyal EEG dan EOG 
+# EEG-EOG Based Drowsiness Detection 
 
  **Tugas Akhir** - Deteksi tingkat kantuk pengemudi menggunakan State Space Model (Mamba) berbasis sinyal EEG dan EOG.
 
